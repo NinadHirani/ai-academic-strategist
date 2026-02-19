@@ -2,11 +2,6 @@
 
 🧠 Context-Aware Study & Deep Exploration System
 
----
-
-## 🌐 Live Demo
-
-**Live URL:** https://ai-academic-strategist.vercel.app
 
 ---
 
@@ -78,7 +73,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-5. Open [http://localhost:3000](http://localhost:3000)
+5. Open [http://localhost:3000](http://localhost:3001)
 
 ---
 
