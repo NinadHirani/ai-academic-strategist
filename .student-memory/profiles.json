@@ -1,0 +1,83 @@
+{
+  "anonymous": {
+    "userId": "anonymous",
+    "createdAt": 1771469878131,
+    "updatedAt": 1771471644061,
+    "topics": {
+      "front": {
+        "name": "front",
+        "category": "general",
+        "frequency": 1,
+        "lastAsked": 1771469891627,
+        "confidenceScore": 0.5
+      },
+      "ninad": {
+        "name": "ninad",
+        "category": "general",
+        "frequency": 1,
+        "lastAsked": 1771470124123,
+        "confidenceScore": 0.5
+      },
+      "give": {
+        "name": "give",
+        "category": "general",
+        "frequency": 1,
+        "lastAsked": 1771471591927,
+        "confidenceScore": 0.5
+      },
+      "specifically": {
+        "name": "specifically",
+        "category": "general",
+        "frequency": 1,
+        "lastAsked": 1771471644061,
+        "confidenceScore": 0.5
+      }
+    },
+    "interactions": [
+      {
+        "userMessage": "hi",
+        "topic": "general",
+        "id": "1771469878717-1dgu836h0",
+        "timestamp": 1771469878717
+      },
+      {
+        "userMessage": "front end",
+        "topic": "front",
+        "id": "1771469891626-63bgpbvq7",
+        "timestamp": 1771469891626
+      },
+      {
+        "userMessage": "gtu",
+        "topic": "general",
+        "id": "1771469914706-9tewvjsz5",
+        "timestamp": 1771469914706
+      },
+      {
+        "userMessage": "ninad",
+        "topic": "ninad",
+        "id": "1771470124121-a94fdybgz",
+        "timestamp": 1771470124122
+      },
+      {
+        "userMessage": "give me gtu imp for sem 6 iot subject",
+        "topic": "give",
+        "id": "1771471591926-p7yo56xd0",
+        "timestamp": 1771471591926
+      },
+      {
+        "userMessage": "specifically for gtu oriented",
+        "topic": "specifically",
+        "id": "1771471644060-cj8z4pqgw",
+        "timestamp": 1771471644060
+      }
+    ],
+    "weakAreas": [],
+    "strongAreas": [],
+    "learningPatterns": {
+      "repeatedQuestions": [],
+      "difficultConcepts": [],
+      "averageSessionLength": 0,
+      "totalSessions": 0
+    }
+  }
+}
