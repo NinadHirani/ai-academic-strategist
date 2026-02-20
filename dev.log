@@ -1,0 +1,91 @@
+
+> ai-project@0.1.0 dev
+> next dev
+
+⚠ Warning: Next.js inferred your workspace root, but it may not be correct.
+ We detected multiple lockfiles and selected the directory of /Users/ninadhirani/package-lock.json as the root directory.
+ To silence this warning, set `turbopack.root` in your Next.js config, or consider removing one of the lockfiles if it's not needed.
+   See https://nextjs.org/docs/app/api-reference/config/next-config-js/turbopack#root-directory for more information.
+ Detected additional lockfiles: 
+   * /Users/ninadhirani/Desktop/ai-project/package-lock.json
+
+▲ Next.js 16.1.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://10.249.73.253:3000
+
+✓ Starting...
+✓ Ready in 1054ms
+ GET / 200 in 627ms (compile: 402ms, render: 224ms)
+ HEAD / 200 in 82ms (compile: 22ms, render: 60ms)
+ GET / 200 in 51ms (compile: 9ms, render: 42ms)
+ GET / 200 in 83ms (compile: 8ms, render: 75ms)
+ GET / 200 in 231ms (compile: 82ms, render: 149ms)
+ GET / 200 in 70ms (compile: 3ms, render: 67ms)
+ GET / 200 in 71ms (compile: 6ms, render: 65ms)
+✓ Compiled in 739ms
+ GET / 200 in 262ms (compile: 98ms, render: 164ms)
+✓ Compiled in 179ms
+✓ Compiled in 128ms
+ GET / 200 in 295ms (compile: 85ms, render: 209ms)
+ GET / 200 in 138ms (compile: 8ms, render: 130ms)
+ GET / 200 in 539ms (compile: 34ms, render: 505ms)
+ GET / 200 in 455ms (compile: 94ms, render: 361ms)
+ GET / 200 in 196ms (compile: 5ms, render: 191ms)
+ GET / 200 in 155ms (compile: 6ms, render: 149ms)
+ GET / 200 in 163ms (compile: 11ms, render: 152ms)
+ GET / 200 in 150ms (compile: 10ms, render: 140ms)
+ GET / 200 in 104ms (compile: 4ms, render: 101ms)
+ GET / 200 in 73ms (compile: 6ms, render: 68ms)
+ GET / 200 in 38ms (compile: 5ms, render: 33ms)
+✓ Compiled in 182ms
+✓ Compiled in 175ms
+✓ Compiled in 114ms
+ GET / 200 in 220ms (compile: 71ms, render: 149ms)
+ GET / 200 in 182ms (compile: 19ms, render: 162ms)
+OPENAI_API_KEY not configured
+ POST /api/chat 500 in 557ms (compile: 521ms, render: 36ms)
+✓ Compiled in 194ms
+ GET / 200 in 821ms (compile: 104ms, render: 717ms)
+ GET / 200 in 238ms (compile: 10ms, render: 228ms)
+ GET / 200 in 203ms (compile: 21ms, render: 182ms)
+ GET / 200 in 219ms (compile: 18ms, render: 201ms)
+ GET / 200 in 171ms (compile: 8ms, render: 163ms)
+ GET / 200 in 196ms (compile: 9ms, render: 187ms)
+ GET / 200 in 200ms (compile: 6ms, render: 194ms)
+ GET / 200 in 147ms (compile: 10ms, render: 137ms)
+ GET / 200 in 102ms (compile: 9ms, render: 93ms)
+ GET / 200 in 64ms (compile: 9ms, render: 56ms)
+ GET / 200 in 785ms (compile: 271ms, render: 513ms)
+ GET / 200 in 247ms (compile: 20ms, render: 227ms)
+ GET / 200 in 203ms (compile: 17ms, render: 186ms)
+ GET / 200 in 172ms (compile: 8ms, render: 164ms)
+ GET / 200 in 155ms (compile: 9ms, render: 146ms)
+ GET / 200 in 137ms (compile: 4ms, render: 133ms)
+ GET / 200 in 102ms (compile: 6ms, render: 96ms)
+ GET / 200 in 146ms (compile: 7ms, render: 139ms)
+ GET / 200 in 186ms (compile: 2ms, render: 183ms)
+ GET / 200 in 157ms (compile: 5ms, render: 152ms)
+ GET / 200 in 119ms (compile: 3ms, render: 116ms)
+ GET / 200 in 71ms (compile: 27ms, render: 43ms)
+✓ Compiled in 400ms
+✓ Compiled in 492ms
+✓ Compiled in 160ms
+✓ Compiled in 628ms
+ GET / 200 in 484ms (compile: 186ms, render: 298ms)
+OPENAI_API_KEY not configured
+ POST /api/chat 500 in 202ms (compile: 178ms, render: 24ms)
+✓ Compiled in 195ms
+ GET / 200 in 468ms (compile: 195ms, render: 273ms)
+OPENAI_API_KEY not configured
+ POST /api/chat 500 in 33ms (compile: 12ms, render: 21ms)
+ POST /api/documents/upload 500 in 389ms (compile: 380ms, render: 9ms)
+ GET / 200 in 126ms (compile: 34ms, render: 91ms)
+[Chat API] OPENAI_API_KEY not configured
+ POST /api/chat 500 in 169ms (compile: 153ms, render: 16ms)
+ GET / 200 in 124ms (compile: 32ms, render: 92ms)
+ GET / 200 in 100ms (compile: 24ms, render: 75ms)
+  Reload env: .env.local
+  Reload env: .env.local
+ GET / 200 in 1234ms (compile: 153ms, render: 1081ms)
+ GET / 200 in 206ms (compile: 93ms, render: 112ms)
+[?25h
