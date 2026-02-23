@@ -1,18 +1,26 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+// Supabase client for browser (anon key - safe to expose)
+export const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+);
 
-export const supabase = supabaseUrl && supabaseAnonKey 
-  ? createClient(supabaseUrl, supabaseAnonKey)
+// Supabase admin client for server-side operations (service role key)
+export const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
+  ? createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
   : null;
 
-export const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY && supabaseUrl
-  ? createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY, {
-      auth: { autoRefreshToken: false, persistSession: false }
-    })
-  : null;
-
+// Database table types
 export interface UserProfile {
   id: string;
   user_id: string;
@@ -74,8 +82,8 @@ export interface ContextPreset {
   semesters: number[];
 }
 
+// Helper function to check Supabase connection
 export async function checkSupabaseConnection(): Promise<boolean> {
-  if (!supabase) return false;
   try {
     const { error } = await supabase.from('pg_catalog.pg_tables').select('*').limit(1);
     return !error || error.code !== 'PGRST116';

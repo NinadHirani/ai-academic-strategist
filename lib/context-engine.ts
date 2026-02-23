@@ -1,7 +1,17 @@
 /**
  * Academic Context Detection Engine
  * Analyzes user queries to extract structured academic metadata
+ * 
+ * Supported patterns:
+ * - University codes (GTU, MIT, Stanford, etc.)
+ * - Semester references (Sem 1-8, Semester 1-8)
+ * - Subject abbreviations and full names
+ * - Intent detection (exam_preparation, homework_help, concept_explanation, etc.)
  */
+
+// ============================================================================
+// Types
+// ============================================================================
 
 export interface AcademicContext {
   university: string | null;
@@ -23,7 +33,12 @@ export type AcademicIntent =
   | "general_query"
   | "unknown";
 
+// ============================================================================
+// University Knowledge Base
+// ============================================================================
+
 const UNIVERSITY_PATTERNS: Record<string, string> = {
+  // Indian Universities
   "gtu": "Gujarat Technological University",
   "mumbai university": "University of Mumbai",
   "mu": "University of Mumbai",
@@ -39,6 +54,8 @@ const UNIVERSITY_PATTERNS: Record<string, string> = {
   "kuk": "Kurukshetra University",
   "pu": "Punjab University",
   "bu": "Bangalore University",
+  
+  // International
   "stanford": "Stanford University",
   "mit": "Massachusetts Institute of Technology",
   "caltech": "California Institute of Technology",
@@ -50,11 +67,18 @@ const UNIVERSITY_PATTERNS: Record<string, string> = {
   "columbia": "Columbia University",
   "yale": "Yale University",
   "princeton": "Princeton University",
+  
+  // Generic
   "university": "Generic University",
   "college": "College",
 };
 
+// ============================================================================
+// Subject Knowledge Base
+// ============================================================================
+
 const SUBJECT_PATTERNS: Record<string, string> = {
+  // Computer Science & Programming
   "ajp": "Advanced Java Programming",
   "adv java": "Advanced Java Programming",
   "java": "Java Programming",
@@ -88,12 +112,16 @@ const SUBJECT_PATTERNS: Record<string, string> = {
   "cybersecurity": "Cyber Security",
   "iot": "Internet of Things",
   "blockchain": "Blockchain Technology",
+  
+  // Engineering
   "maths": "Mathematics",
   "math": "Mathematics",
   "mathematics": "Mathematics",
   "physics": "Physics",
   "chem": "Chemistry",
   "chemistry": "Chemistry",
+  
+  // Electronics
   "dc": "Digital Circuits",
   "microprocessor": "Microprocessor",
   "microcontroller": "Microcontroller",
@@ -101,15 +129,27 @@ const SUBJECT_PATTERNS: Record<string, string> = {
   "signals": "Signals and Systems",
   "electronics": "Electronics",
   "circuits": "Circuit Theory",
+  
+  // Management
   "mba": "Management Studies",
   "management": "Management Studies",
   "economics": "Economics",
+  
+  // General
   "engineering": "Engineering",
   "science": "Science",
   "commerce": "Commerce",
 };
 
+// ============================================================================
+// Semester Patterns
+// ============================================================================
+
 const SEMESTER_REGEX = /(?:sem(?:ester)?\.?\s*)(\d{1,2})/gi;
+
+// ============================================================================
+// Intent Keywords
+// ============================================================================
 
 const INTENT_KEYWORDS: Record<AcademicIntent, string[]> = {
   exam_preparation: [
@@ -142,6 +182,13 @@ const INTENT_KEYWORDS: Record<AcademicIntent, string[]> = {
   unknown: [],
 };
 
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Detect university from text
+ */
 function detectUniversity(text: string): { value: string | null; matches: string[] } {
   const lowerText = text.toLowerCase();
   const matches: string[] = [];
@@ -151,6 +198,7 @@ function detectUniversity(text: string): { value: string | null; matches: string
   for (const [pattern, fullName] of Object.entries(UNIVERSITY_PATTERNS)) {
     if (lowerText.includes(pattern)) {
       matches.push(pattern);
+      // Prioritize longer matches (more specific)
       if (pattern.length > highestPriority) {
         highestPriority = pattern.length;
         detected = fullName;
@@ -161,6 +209,9 @@ function detectUniversity(text: string): { value: string | null; matches: string
   return { value: detected, matches };
 }
 
+/**
+ * Detect semester from text
+ */
 function detectSemester(text: string): { value: number | null; matches: string[] } {
   const matches: string[] = [];
   const foundSemesters: number[] = [];
@@ -175,12 +226,16 @@ function detectSemester(text: string): { value: number | null; matches: string[]
     }
   }
 
+  // Return the first valid semester found (usually the most relevant)
   return {
     value: foundSemesters.length > 0 ? foundSemesters[0] : null,
     matches,
   };
 }
 
+/**
+ * Detect subject from text
+ */
 function detectSubject(text: string): { value: string | null; code: string | null; matches: string[] } {
   const lowerText = text.toLowerCase();
   const matches: string[] = [];
@@ -191,6 +246,7 @@ function detectSubject(text: string): { value: string | null; code: string | nul
   for (const [pattern, fullName] of Object.entries(SUBJECT_PATTERNS)) {
     if (lowerText.includes(pattern)) {
       matches.push(pattern);
+      // Prioritize longer matches (more specific)
       if (pattern.length > highestPriority) {
         highestPriority = pattern.length;
         detectedFull = fullName;
@@ -202,6 +258,9 @@ function detectSubject(text: string): { value: string | null; code: string | nul
   return { value: detectedFull, code: detectedCode, matches };
 }
 
+/**
+ * Detect academic intent from text
+ */
 function detectIntent(text: string): { value: AcademicIntent; confidence: number } {
   const lowerText = text.toLowerCase();
   let bestIntent: AcademicIntent = "general_query";
@@ -213,7 +272,7 @@ function detectIntent(text: string): { value: AcademicIntent; confidence: number
     let score = 0;
     for (const keyword of keywords) {
       if (lowerText.includes(keyword)) {
-        score += keyword.length;
+        score += keyword.length; // Weight by keyword length
       }
     }
 
@@ -223,18 +282,22 @@ function detectIntent(text: string): { value: AcademicIntent; confidence: number
     }
   }
 
+  // Calculate confidence based on keyword matches
   const confidence = bestScore > 0 ? Math.min(0.5 + (bestScore / 50), 0.95) : 0.3;
 
   return { value: bestIntent, confidence };
 }
 
+/**
+ * Calculate overall confidence score
+ */
 function calculateOverallConfidence(
   university: string | null,
   semester: number | null,
   subject: string | null,
   intent: AcademicIntent
 ): number {
-  let score = 0.3;
+  let score = 0.3; // Base confidence
 
   if (university) score += 0.2;
   if (semester) score += 0.15;
@@ -244,18 +307,31 @@ function calculateOverallConfidence(
   return Math.min(score, 1.0);
 }
 
+// ============================================================================
+// Main Export Function
+// ============================================================================
+
+/**
+ * Parse user query and extract academic context
+ * 
+ * @param query - The user's input message
+ * @returns AcademicContext with detected metadata
+ */
 export function parseAcademicContext(query: string): AcademicContext {
+  // Detect each component
   const universityResult = detectUniversity(query);
   const semesterResult = detectSemester(query);
   const subjectResult = detectSubject(query);
   const intentResult = detectIntent(query);
 
+  // Collect all raw matches
   const rawMatches = [
     ...universityResult.matches,
     ...semesterResult.matches,
     ...subjectResult.matches,
   ];
 
+  // Calculate overall confidence
   const confidence = calculateOverallConfidence(
     universityResult.value,
     semesterResult.value,
@@ -274,6 +350,9 @@ export function parseAcademicContext(query: string): AcademicContext {
   };
 }
 
+/**
+ * Generate a context summary string for debugging/logging
+ */
 export function contextToString(context: AcademicContext): string {
   const parts: string[] = [];
 
@@ -287,27 +366,51 @@ export function contextToString(context: AcademicContext): string {
     : "[No academic context detected]";
 }
 
+/**
+ * Get context for prompt injection
+ */
 export function getContextForPrompt(context: AcademicContext): string {
   const parts: string[] = [];
 
-  if (context.university) parts.push(`University: ${context.university}`);
-  if (context.semester) parts.push(`Semester: ${context.semester}`);
-  if (context.subject) parts.push(`Subject: ${context.subject}`);
+  if (context.university) {
+    parts.push(`University: ${context.university}`);
+  }
+  if (context.semester) {
+    parts.push(`Semester: ${context.semester}`);
+  }
+  if (context.subject) {
+    parts.push(`Subject: ${context.subject}`);
+  }
   if (context.intent !== "general_query") {
     parts.push(`Student Intent: ${context.intent.replace(/_/g, " ")}`);
   }
 
-  return parts.length > 0 ? `Academic Context:\n${parts.join("\n")}` : "";
+  return parts.length > 0 
+    ? `Academic Context:\n${parts.join("\n")}`
+    : "";
 }
 
+// ============================================================================
+// Knowledge Base Extension Helpers
+// ============================================================================
+
+/**
+ * Add custom university mapping
+ */
 export function addUniversityPattern(code: string, fullName: string): void {
   UNIVERSITY_PATTERNS[code.toLowerCase()] = fullName;
 }
 
+/**
+ * Add custom subject mapping
+ */
 export function addSubjectPattern(code: string, fullName: string): void {
   SUBJECT_PATTERNS[code.toLowerCase()] = fullName;
 }
 
+/**
+ * Add custom intent keywords
+ */
 export function addIntentKeywords(intent: AcademicIntent, keywords: string[]): void {
   if (INTENT_KEYWORDS[intent]) {
     INTENT_KEYWORDS[intent].push(...keywords);

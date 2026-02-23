@@ -1,411 +1,148 @@
 import { NextRequest, NextResponse } from "next/server";
-import { retrieveContext, getDocuments, RAGConfig, getStats } from "@/lib/rag";
+import { processDocument, getDocuments, deleteDocument } from "@/lib/rag";
 import { generateEmbedding } from "@/lib/embeddings";
-import { parseAcademicContext, getContextForPrompt, AcademicContext } from "@/lib/context-engine";
-import { getOrCreateSession, addMessage, getConversationContext, generateSessionTitle, updateSession, getSessionMessageCount, ChatMode } from "@/lib/chat-history";
 
-interface ChatRequestBody {
-  message: string;
-  mode: "study" | "deepExplore" | "tutor" | "review";
-  useRag?: boolean;
-  userId?: string;
-  confidenceLevel?: "high" | "medium" | "low";
-  sessionId?: string;
-  stream?: boolean;
-}
+// Maximum file size: 10MB
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
-interface Message {
-  role: "system" | "user" | "assistant";
+// Allowed file types
+const ALLOWED_TYPES = [
+  "application/pdf",
+  "text/plain",
+  "text/markdown",
+  "text/csv",
+];
+
+interface UploadBody {
   content: string;
+  fileName: string;
+  fileType: string;
 }
 
-interface Source {
-  documentName: string;
-  chunkIndex: number;
-  score: number;
-  content?: string;
-}
-
-interface RetrievalMetadata {
-  retrieved: boolean;
-  sourceCount: number;
-  sources: Source[];
-  retrievalTime?: number;
-  embeddingGenerated?: boolean;
-  vectorStoreStats?: unknown;
-}
-
-interface AcademicContextMetadata {
-  university: string | null;
-  semester: number | null;
-  subject: string | null;
-  subjectCode: string | null;
-  intent: string;
-  confidence: number;
-}
-
-interface ChatResponse {
-  message: string;
-  mode: string;
-  hasDocuments: boolean;
-  retrieval?: RetrievalMetadata;
-  academicContext?: AcademicContextMetadata;
-  sessionId?: string;
-  error?: string;
-  debug?: unknown;
-}
-
-const DEFAULT_RAG_CONFIG: RAGConfig = {
-  chunkSize: 800,
-  chunkOverlap: 150,
-  retrievalK: 5,
-  similarityThreshold: 0.15,
-};
-
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-const DEFAULT_USER_ID = "anonymous";
-const MAX_CHAT_HISTORY_MESSAGES = 15;
-
-const BASE_SYSTEM_PROMPT = `You are AI Academic Strategist for students.
-
-STRICT FORMATTING RULES:
-
-1. SECTIONS: Use ## for headings. Leave 2 BLANK LINES between sections.
-
-2. PARAGRAPHS: Maximum 2 sentences. Leave 1 BLANK LINE between paragraphs.
-
-3. BULLETS: Each bullet on its own line. Add blank line before/after lists.
-
-4. TABLES: Use markdown tables for 3+ items.
-
-5. NEVER: 3+ sentence paragraphs, skipped blank lines, walls of text.`;
-
-const MODE_INSTRUCTIONS: Record<string, string> = {
-  study: `STUDY MODE:
-- Be concise
-- Bullet lists for key points
-- Use tables
-- Short paragraphs only`,
-
-  deepExplore: `DEELEXPLORE MODE - Must include:
-
-## Concept Overview
-[2 short paragraphs]
-
-## Key Principles
-[Bullet list format]
-
-## Related Topics
-[Connected concepts]
-
-## Common Confusions
-[List mistakes to avoid]
-
-## Practical Applications
-[Real examples]
-
-## Exam Relevance
-[What to memorize]
-
-ADD 2 BLANK LINES BETWEEN EACH SECTION!`,
-
-  tutor: `TUTOR MODE:
-- Ask guiding questions
-- Give hints not answers`,
-
-  review: `REVIEW MODE:
-- Quick focused responses
-- Practice questions`
-};
-
-const RAG_CONTEXT_TEMPLATE = `Reference Material:
-{sources}
-
-{context}`;
-
-const IMPROVED_CONTEXT_INSTRUCTION = `Use reference material. Add from your knowledge if needed.`;
-
-const NO_CONTEXT_INSTRUCTION = `No documents. Use your knowledge. Suggest good resources.`;
-
-function buildAdvancedSystemPrompt(
-  mode: "study" | "deepExplore" | "tutor" | "review",
-  retrievedContext: string | null,
-  sources: Source[],
-  academicContext: AcademicContext | null,
-  conversationLength: number
-): string {
-  const promptParts = [
-    BASE_SYSTEM_PROMPT,
-    "",
-    MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.study,
-    "",
-  ];
-
-  if (conversationLength > 0) {
-    promptParts.push(`Message ${conversationLength + 1}. Build on discussion.`);
-  }
-
-  if (academicContext && academicContext.confidence >= 0.4) {
-    const contextString = getContextForPrompt(academicContext);
-    if (contextString) {
-      promptParts.push("", contextString);
-    }
-  }
-
-  if (retrievedContext && sources.length > 0) {
-    const sourceList = sources.map((s, i) => 
-      `${i + 1}. ${s.documentName}${s.chunkIndex !== undefined ? ` (Section ${s.chunkIndex + 1})` : ''}`
-    ).join('\n');
-    
-    const contextSection = RAG_CONTEXT_TEMPLATE
-      .replace("{sources}", sourceList)
-      .replace("{context}", retrievedContext);
-    
-    promptParts.push("", contextSection);
-    promptParts.push("", IMPROVED_CONTEXT_INSTRUCTION);
-  } else {
-    promptParts.push("", NO_CONTEXT_INSTRUCTION);
-  }
-
-  return promptParts.join("\n");
-}
-
-function validateRequest(body: unknown): ChatRequestBody | null {
-  if (!body || typeof body !== "object") return null;
-
-  const { message, mode, useRag, userId, confidenceLevel, sessionId, stream } = body as Record<string, unknown>;
-
-  if (!message || typeof message !== "string" || message.trim().length === 0) {
-    return null;
-  }
-
-  const validModes: Array<"study" | "deepExplore" | "tutor" | "review"> = ["study", "deepExplore", "tutor" as const, "review" as const];
-  const resolvedMode = validModes.includes(mode as "study" | "deepExplore" | "tutor" | "review") 
-    ? mode as "study" | "deepExplore" | "tutor" | "review"
-    : "study";
-
-  return {
-    message: message.trim(),
-    mode: resolvedMode,
-    useRag: useRag === undefined ? true : Boolean(useRag),
-    userId: typeof userId === "string" ? userId : DEFAULT_USER_ID,
-    confidenceLevel: typeof confidenceLevel === "string" ? confidenceLevel as "high" | "medium" | "low" : undefined,
-    sessionId: typeof sessionId === "string" ? sessionId : undefined,
-    stream: Boolean(stream),
-  };
-}
-
-function getConfig() {
-  const groqApiKey = process.env.GROQ_API_KEY;
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  
-  if (groqApiKey) {
-    return {
-      apiKey: groqApiKey,
-      baseUrl: "https://api.groq.com/openai/v1",
-      model: process.env.GROQ_MODEL || GROQ_MODEL,
-      embeddingModel: "text-embedding-3-small",
-      embeddingApiKey: groqApiKey,
-      embeddingBaseUrl: "https://api.groq.com/openai/v1",
-    };
-  }
-  
-  return {
-    apiKey: openaiApiKey,
-    baseUrl: process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1",
-    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
-    embeddingModel: "text-embedding-3-small",
-    embeddingApiKey: openaiApiKey,
-    embeddingBaseUrl: process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1",
-  };
-}
-
-function contextToMetadata(context: AcademicContext): AcademicContextMetadata {
-  return {
-    university: context.university,
-    semester: context.semester,
-    subject: context.subject,
-    subjectCode: context.subjectCode,
-    intent: context.intent,
-    confidence: context.confidence,
-  };
-}
-
-export async function POST(request: NextRequest): Promise<NextResponse<ChatResponse | { error: string }>> {
-  const startTime = Date.now();
-
+/**
+ * POST /api/documents
+ * Upload and process a document
+ */
+export async function POST(request: NextRequest) {
   try {
-    let body: unknown;
-    try {
-      body = await request.json();
-    } catch {
-      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
-    }
-
-    const validatedBody = validateRequest(body);
-    if (!validatedBody) {
-      return NextResponse.json({ error: "Message required and must be a string" }, { status: 400 });
-    }
-
-    const { message, mode, useRag, userId: rawUserId, sessionId } = validatedBody;
-    const userId = rawUserId || DEFAULT_USER_ID;
-
-    let currentSessionId = sessionId || undefined;
-    let conversationLength = 0;
-    
-    try {
-      const session = await getOrCreateSession(userId, currentSessionId);
-      currentSessionId = session.id;
-      await addMessage(session.id, "user", message);
-      
-      const messageCount = await getSessionMessageCount(session.id);
-      conversationLength = messageCount;
-      
-      if (messageCount <= 2) {
-        const title = await generateSessionTitle(message);
-        await updateSession(session.id, { title, mode: mode as ChatMode });
-      }
-    } catch (e) {
-      console.error("[Chat] Session error:", e);
-    }
-
-    const academicContext = parseAcademicContext(message);
-
-    const config = getConfig();
-    if (!config.apiKey) {
-      return NextResponse.json({ error: "API key not configured. Please set GROQ_API_KEY or OPENAI_API_KEY" }, { status: 500 });
-    }
-
-    const documents = getDocuments();
-    const hasDocuments = documents.length > 0;
-    const vectorStoreStats = getStats();
-
-    let retrievedContext: string | null = null;
-    let sources: Source[] = [];
-    let retrievalMetadata: RetrievalMetadata | undefined;
-    let embeddingGenerated = false;
-
-    if (useRag && hasDocuments) {
-      try {
-        const queryEmbedding = await generateEmbedding(message, {
-          apiKey: config.embeddingApiKey || config.apiKey,
-          baseUrl: config.embeddingBaseUrl,
-          model: config.embeddingModel,
-        });
-        
-        embeddingGenerated = true;
-
-        const retrievalResult = await retrieveContext(message, queryEmbedding, config.embeddingApiKey || config.apiKey, DEFAULT_RAG_CONFIG);
-        
-        retrievedContext = retrievalResult.context || null;
-        sources = retrievalResult.sources;
-
-        retrievalMetadata = {
-          retrieved: sources.length > 0,
-          sourceCount: sources.length,
-          sources: sources,
-          retrievalTime: Date.now() - startTime,
-          embeddingGenerated,
-          vectorStoreStats,
-        };
-      } catch (ragError) {
-        console.error("[Chat] RAG error:", ragError);
-        retrievalMetadata = {
-          retrieved: false,
-          sourceCount: 0,
-          sources: [],
-          retrievalTime: Date.now() - startTime,
-          embeddingGenerated,
-          vectorStoreStats,
-        };
-      }
-    }
-
-    const systemPrompt = buildAdvancedSystemPrompt(mode, retrievedContext, sources, academicContext, conversationLength);
-
-    let conversationHistory: Message[] = [];
-    if (currentSessionId) {
-      try {
-        const historyMessages = await getConversationContext(currentSessionId, MAX_CHAT_HISTORY_MESSAGES);
-        conversationHistory = historyMessages.map(msg => ({
-          role: msg.role as "user" | "assistant" | "system",
-          content: msg.content,
-        }));
-      } catch (e) {
-        console.error("[Chat] History error:", e);
-      }
-    }
-
-    const messages: Message[] = [
-      { role: "system", content: systemPrompt },
-      ...conversationHistory,
-      { role: "user", content: message },
-    ];
-
-    const chatResponse = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        temperature: 0.7,
-        max_tokens: 4000,
-        top_p: 0.9,
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
-      }),
-    });
-
-    if (!chatResponse.ok) {
-      const errorData = await chatResponse.json().catch(() => ({}));
-      const errorMsg = errorData.error?.message || "AI request failed";
-      console.error("[Chat] API Error:", errorMsg);
+    // Get API key from environment
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
       return NextResponse.json(
-        { error: errorMsg },
-        { status: chatResponse.status }
+        { error: "API key not configured" },
+        { status: 500 }
       );
     }
 
-    const responseData = await chatResponse.json();
-    let assistantMessage = responseData.choices?.[0]?.message?.content ||
-      "I couldn't generate a response. Please try again.";
+    // Parse the request body
+    const body: UploadBody = await request.json();
+    const { content, fileName, fileType } = body;
 
-    assistantMessage = assistantMessage.trim();
-
-    if (currentSessionId) {
-      try {
-        await addMessage(currentSessionId, "assistant", assistantMessage);
-      } catch (e) {
-        console.error("[Chat] Save error:", e);
-      }
+    // Validate required fields
+    if (!content || !fileName) {
+      return NextResponse.json(
+        { error: "Missing required fields: content, fileName" },
+        { status: 400 }
+      );
     }
 
-    const totalTime = Date.now() - startTime;
+    // Validate file type
+    if (fileType && !ALLOWED_TYPES.includes(fileType)) {
+      return NextResponse.json(
+        { error: `Invalid file type. Allowed: ${ALLOWED_TYPES.join(", ")}` },
+        { status: 400 }
+      );
+    }
+
+    // Validate content size
+    if (content.length > MAX_FILE_SIZE) {
+      return NextResponse.json(
+        { error: `File too large. Maximum size: ${MAX_FILE_SIZE / 1024 / 1024}MB` },
+        { status: 400 }
+      );
+    }
+
+    // Generate unique document ID
+    const documentId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+
+    // Process the document
+    const result = await processDocument(
+      documentId,
+      fileName,
+      content,
+      apiKey
+    );
+
+    if (!result.success) {
+      return NextResponse.json(
+        { error: result.error || "Failed to process document" },
+        { status: 500 }
+      );
+    }
+
+    // Return success response
+    return NextResponse.json({
+      success: true,
+      document: {
+        id: documentId,
+        name: fileName,
+        type: fileType,
+        status: "ready",
+        chunkCount: result.chunkCount,
+      },
+    });
+  } catch (error) {
+    console.error("Document upload error:", error);
+    return NextResponse.json(
+      { error: "Internal server error" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * GET /api/documents
+ * List all uploaded documents
+ */
+export async function GET() {
+  try {
+    const documents = getDocuments();
+    return NextResponse.json({ documents });
+  } catch (error) {
+    console.error("Error fetching documents:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch documents" },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * DELETE /api/documents
+ * Delete a document by ID
+ */
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url);
+    const documentId = searchParams.get("id");
+
+    if (!documentId) {
+      return NextResponse.json(
+        { error: "Document ID is required" },
+        { status: 400 }
+      );
+    }
+
+    await deleteDocument(documentId);
 
     return NextResponse.json({
-      message: assistantMessage,
-      mode,
-      hasDocuments,
-      retrieval: retrievalMetadata,
-      academicContext: contextToMetadata(academicContext),
-      sessionId: currentSessionId,
-      debug: {
-        model: config.model,
-        responseTime: totalTime,
-        documentsCount: documents.length,
-        hasRagContext: !!(retrievedContext && sources.length > 0),
-        sourcesFound: sources.length,
-        conversationLength,
-      }
+      success: true,
+      message: "Document deleted successfully",
     });
-
   } catch (error) {
-    console.error("[Chat] Error:", error);
+    console.error("Error deleting document:", error);
     return NextResponse.json(
-      { error: "An unexpected error occurred. Please try again." },
+      { error: "Failed to delete document" },
       { status: 500 }
     );
   }
