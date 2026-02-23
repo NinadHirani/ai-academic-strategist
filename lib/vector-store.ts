@@ -1,5 +1,6 @@
 /**
  * Vector Store - In-Memory Implementation
+ * Modular design allowing for future Supabase/Pinecone integration
  */
 
 import { cosineSimilarity, euclideanDistance } from './embeddings';
@@ -27,6 +28,10 @@ export interface VectorStoreOptions {
   similarityMetric?: SimilarityMetric;
 }
 
+/**
+ * In-memory vector store implementation
+ * Can be replaced with Supabase, Pinecone, or other vector databases
+ */
 export class InMemoryVectorStore {
   private chunks: Map<string, VectorChunk> = new Map();
   private documentChunks: Map<string, VectorChunk[]> = new Map();
@@ -36,18 +41,33 @@ export class InMemoryVectorStore {
     this.similarityMetric = options.similarityMetric || 'cosine';
   }
 
+  /**
+   * Add chunks with embeddings to the store
+   */
   async add(chunks: VectorChunk[]): Promise<void> {
     for (const chunk of chunks) {
       this.chunks.set(chunk.id, chunk);
+      
+      // Index by document
       const docChunks = this.documentChunks.get(chunk.metadata.documentId) || [];
       docChunks.push(chunk);
       this.documentChunks.set(chunk.metadata.documentId, docChunks);
     }
   }
 
-  async search(queryEmbedding: number[], options: { k?: number; filter?: { documentId?: string; documentName?: string } } = {}): Promise<SearchResult[]> {
+  /**
+   * Search for similar chunks
+   */
+  async search(queryEmbedding: number[], options: {
+    k?: number;
+    filter?: {
+      documentId?: string;
+      documentName?: string;
+    };
+  } = {}): Promise<SearchResult[]> {
     const { k = 5, filter } = options;
 
+    // Get candidate chunks
     let candidates: VectorChunk[];
     
     if (filter?.documentId) {
@@ -57,15 +77,19 @@ export class InMemoryVectorStore {
     }
 
     if (filter?.documentName) {
-      candidates = candidates.filter(c => c.metadata.documentName === filter.documentName);
+      candidates = candidates.filter(
+        (c) => c.metadata.documentName === filter.documentName
+      );
     }
 
+    // Calculate similarities
     const results: SearchResult[] = candidates.map((chunk) => {
       let score: number;
       
       if (this.similarityMetric === 'cosine') {
         score = cosineSimilarity(queryEmbedding, chunk.embedding);
       } else {
+        // For Euclidean distance, convert to similarity (lower is better)
         const distance = euclideanDistance(queryEmbedding, chunk.embedding);
         score = 1 / (1 + distance);
       }
@@ -73,22 +97,36 @@ export class InMemoryVectorStore {
       return { chunk, score };
     });
 
+    // Sort by score descending
     results.sort((a, b) => b.score - a.score);
+
+    // Return top k
     return results.slice(0, k);
   }
 
+  /**
+   * Get all chunks for a specific document
+   */
   getByDocument(documentId: string): VectorChunk[] {
     return this.documentChunks.get(documentId) || [];
   }
 
+  /**
+   * Delete all chunks for a document
+   */
   async deleteByDocument(documentId: string): Promise<void> {
     const chunks = this.documentChunks.get(documentId) || [];
+    
     for (const chunk of chunks) {
       this.chunks.delete(chunk.id);
     }
+    
     this.documentChunks.delete(documentId);
   }
 
+  /**
+   * Get all stored documents
+   */
   getDocuments(): Array<{ documentId: string; documentName: string; chunkCount: number }> {
     const docs = new Map<string, { documentId: string; documentName: string; chunkCount: number }>();
     
@@ -105,12 +143,22 @@ export class InMemoryVectorStore {
     return Array.from(docs.values());
   }
 
+  /**
+   * Clear all data
+   */
   async clear(): Promise<void> {
     this.chunks.clear();
     this.documentChunks.clear();
   }
 
-  getStats(): { totalChunks: number; totalDocuments: number; similarityMetric: SimilarityMetric } {
+  /**
+   * Get statistics
+   */
+  getStats(): {
+    totalChunks: number;
+    totalDocuments: number;
+    similarityMetric: SimilarityMetric;
+  } {
     return {
       totalChunks: this.chunks.size,
       totalDocuments: this.documentChunks.size,
@@ -119,24 +167,23 @@ export class InMemoryVectorStore {
   }
 }
 
-const GLOBAL_KEY = '__five_brains_vector_store__';
+// Singleton instance for the application
+let vectorStoreInstance: InMemoryVectorStore | null = null;
 
-function getGlobalStore(): InMemoryVectorStore {
-  const globalObj = globalThis as Record<string, unknown>;
-  
-  if (!globalObj[GLOBAL_KEY]) {
-    globalObj[GLOBAL_KEY] = new InMemoryVectorStore();
-  }
-  
-  return globalObj[GLOBAL_KEY] as InMemoryVectorStore;
-}
-
+/**
+ * Get or create the vector store singleton
+ */
 export function getVectorStore(options?: VectorStoreOptions): InMemoryVectorStore {
-  return getGlobalStore();
+  if (!vectorStoreInstance) {
+    vectorStoreInstance = new InMemoryVectorStore(options);
+  }
+  return vectorStoreInstance;
 }
 
+/**
+ * Reset the vector store (useful for testing)
+ */
 export function resetVectorStore(): void {
-  const globalObj = globalThis as Record<string, unknown>;
-  globalObj[GLOBAL_KEY] = null;
+  vectorStoreInstance = null;
 }
 

@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import Header from "./components/Header";
-import ModeSwitcher from "./components/ModeSwitcher";
-import ChatPanel from "./components/ChatPanel";
-import FileUpload from "./components/FileUpload";
+import Header from "./Header";
+import ModeSwitcher from "./ModeSwitcher";
+import ChatPanel from "./ChatPanel";
+import FileUpload from "./FileUpload";
 
 interface Document {
   id: string;
@@ -38,10 +38,11 @@ export default function Home() {
           onModeChange={setActiveMode} 
         />
 
-        {/* Document Upload Section */}
         <div className="document-section">
           <div className="section-header">
-            <h3 className="section-title">📚 Upload Study Materials</h3>
+            <span className="section-title">
+              📚 Study Materials
+            </span>
             <button 
               className="toggle-upload-btn"
               onClick={() => setShowUpload(!showUpload)}
@@ -63,4 +64,3 @@ export default function Home() {
     </div>
   );
 }
-
