@@ -2,6 +2,11 @@
 
 🧠 Context-Aware Study & Deep Exploration System
 
+---
+
+## 🌐 Live Demo
+
+**Live URL:** https://ai-project.vercel.app
 
 ---
 
