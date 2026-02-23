@@ -26,10 +26,10 @@ export interface RAGConfig {
 }
 
 const DEFAULT_CONFIG: Required<RAGConfig> = {
-  chunkSize: 1000,
-  chunkOverlap: 100,
-  retrievalK: 5,
-  similarityThreshold: 0.3, // Minimum similarity score to include in context
+  chunkSize: 500,
+  chunkOverlap: 50,
+  retrievalK: 3,
+  similarityThreshold: -1,
 };
 
 /**
@@ -46,7 +46,6 @@ export async function processDocument(
   const vectorStore = getVectorStore();
 
   try {
-    // Step 1: Split text into chunks
     const chunks = splitByParagraphs(
       text,
       documentId,
@@ -58,14 +57,9 @@ export async function processDocument(
       return { success: false, chunkCount: 0, error: 'No text content found in document' };
     }
 
-    // Step 2: Generate embeddings for all chunks
     const texts = chunks.map((c) => c.content);
-    const embeddings = await generateEmbeddings(texts, {
-      apiKey,
-      batchSize: 100,
-    });
+    const embeddings = await generateEmbeddings(texts, { apiKey, batchSize: 100 });
 
-    // Step 3: Create vector chunks
     const vectorChunks: VectorChunk[] = chunks.map((chunk, index) => ({
       id: chunk.id,
       content: chunk.content,
@@ -78,12 +72,12 @@ export async function processDocument(
       },
     }));
 
-    // Step 4: Store in vector database
     await vectorStore.add(vectorChunks);
 
     return { success: true, chunkCount: chunks.length };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[RAG] Error processing document: ${errorMessage}`);
     return { success: false, chunkCount: 0, error: errorMessage };
   }
 }
@@ -103,20 +97,16 @@ export async function retrieveContext(
   const options = { ...DEFAULT_CONFIG, ...config };
   const vectorStore = getVectorStore();
 
-  // Search for similar chunks
-  const results = await vectorStore.search(queryEmbedding, {
-    k: options.retrievalK,
-  });
+  const results = await vectorStore.search(queryEmbedding, { k: options.retrievalK });
 
-  // Filter by similarity threshold
-  const relevantResults = results.filter((r) => r.score >= options.similarityThreshold);
+  const relevantResults = options.similarityThreshold >= 0 
+    ? results.filter((r) => r.score >= options.similarityThreshold)
+    : results;
 
-  // Build context from relevant chunks
   const context = relevantResults
     .map((r) => r.chunk.content)
     .join('\n\n---\n\n');
 
-  // Collect source information
   const sources = relevantResults.map((r) => ({
     documentName: r.chunk.metadata.documentName,
     chunkIndex: r.chunk.metadata.chunkIndex,
@@ -136,9 +126,9 @@ export function getDocuments(): Document[] {
   return docInfos.map((info) => ({
     id: info.documentId,
     name: info.documentName,
-    type: 'application/pdf', // Would be determined from actual upload
-    size: 0, // Would be tracked in metadata
-    uploadedAt: new Date(), // Would be tracked in metadata
+    type: 'application/pdf',
+    size: 0,
+    uploadedAt: new Date(),
     status: 'ready' as const,
     chunkCount: info.chunkCount,
   }));
