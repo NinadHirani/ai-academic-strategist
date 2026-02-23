@@ -4,6 +4,10 @@ import { generateEmbedding } from "@/lib/embeddings";
 import { parseAcademicContext, getContextForPrompt, AcademicContext } from "@/lib/context-engine";
 import { getOrCreateSession, addMessage, getConversationContext, generateSessionTitle, updateSession, getSessionMessageCount, ChatMode } from "@/lib/chat-history";
 
+// ============================================================================
+// Types
+// ============================================================================
+
 interface ChatRequestBody {
   message: string;
   mode: "study" | "deepExplore" | "tutor" | "review";
@@ -32,7 +36,7 @@ interface RetrievalMetadata {
   sources: Source[];
   retrievalTime?: number;
   embeddingGenerated?: boolean;
-  vectorStoreStats?: unknown;
+  vectorStoreStats?: any;
 }
 
 interface AcademicContextMetadata {
@@ -52,70 +56,42 @@ interface ChatResponse {
   academicContext?: AcademicContextMetadata;
   sessionId?: string;
   error?: string;
-  debug?: unknown;
+  debug?: any;
 }
 
+// ============================================================================
+// Configuration - UPGRADED for Modern AI Performance
+// ============================================================================
+
 const DEFAULT_RAG_CONFIG: RAGConfig = {
-  chunkSize: 800,
-  chunkOverlap: 150,
-  retrievalK: 5,
-  similarityThreshold: 0.15,
+  chunkSize: 800,        // Increased for more context
+  chunkOverlap: 150,      // Better overlap for continuity
+  retrievalK: 5,          // More chunks for better context
+  similarityThreshold: 0.15, // Balanced threshold
 };
 
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+// Use the best available model
+const GROQ_MODEL = "llama-3.3-70b-versatile";  // Upgraded from llama-3.1-8b-instant
 const DEFAULT_USER_ID = "anonymous";
-const MAX_CHAT_HISTORY_MESSAGES = 15;
+const MAX_CHAT_HISTORY_MESSAGES = 15;  // Increased for better context
 
-const BASE_SYSTEM_PROMPT = `You are AI Academic Strategist for students.
+// ============================================================================
+// Enhanced System Prompts - Natural, Human-like Responses
+// ============================================================================
 
-STRICT FORMATTING RULES:
-
-1. SECTIONS: Use ## for headings. Leave 2 BLANK LINES between sections.
-
-2. PARAGRAPHS: Maximum 2 sentences. Leave 1 BLANK LINE between paragraphs.
-
-3. BULLETS: Each bullet on its own line. Add blank line before/after lists.
-
-4. TABLES: Use markdown tables for 3+ items.
-
-5. NEVER: 3+ sentence paragraphs, skipped blank lines, walls of text.`;
+const BASE_SYSTEM_PROMPT = `You are a knowledgeable and friendly tutor who genuinely enjoys helping students learn. 
+Think and explain things step-by-step naturally, like you're having a conversation with a curious friend.
+Use real-world examples when helpful. If something's unclear, acknowledge it honestly.
+Keep your explanations clear and accessible without being condescending.`;
 
 const MODE_INSTRUCTIONS: Record<string, string> = {
-  study: `STUDY MODE:
-- Be concise
-- Bullet lists for key points
-- Use tables
-- Short paragraphs only`,
+  study: `Help the student understand by breaking down concepts into manageable pieces. Use analogies and examples when they make things clearer. Feel free to ask questions to check understanding.`,
 
-  deepExplore: `DEELEXPLORE MODE - Must include:
+  deepExplore: `Go deep into the topic with thorough explanations. Show how concepts connect to each other and to real-world applications. Address common confusions and provide context that helps build true understanding.`,
 
-## Concept Overview
-[2 short paragraphs]
+  tutor: `Guide the learner through problems with questions rather than giving answers outright. Build on what they already know and help them discover solutions themselves.`,
 
-## Key Principles
-[Bullet list format]
-
-## Related Topics
-[Connected concepts]
-
-## Common Confusions
-[List mistakes to avoid]
-
-## Practical Applications
-[Real examples]
-
-## Exam Relevance
-[What to memorize]
-
-ADD 2 BLANK LINES BETWEEN EACH SECTION!`,
-
-  tutor: `TUTOR MODE:
-- Ask guiding questions
-- Give hints not answers`,
-
-  review: `REVIEW MODE:
-- Quick focused responses
-- Practice questions`
+  review: `Help check understanding with practice questions and feedback. Identify patterns in mistakes and suggest focused areas to improve.`
 };
 
 const RAG_CONTEXT_TEMPLATE = `Reference Material:
@@ -123,12 +99,16 @@ const RAG_CONTEXT_TEMPLATE = `Reference Material:
 
 {context}`;
 
-const IMPROVED_CONTEXT_INSTRUCTION = `Use reference material. Add from your knowledge if needed.`;
+const IMPROVED_CONTEXT_INSTRUCTION = `Use the reference material to inform your answer. If it doesn't fully cover something, feel free to add from your knowledge.`;
 
-const NO_CONTEXT_INSTRUCTION = `No documents. Use your knowledge. Suggest good resources.`;
+const NO_CONTEXT_INSTRUCTION = `No specific documents available. Use what you know to help out, and suggest good resources if you can.`;
+
+// ============================================================================
+// Enhanced Helper Functions
+// ============================================================================
 
 function buildAdvancedSystemPrompt(
-  mode: "study" | "deepExplore" | "tutor" | "review",
+  mode: string,
   retrievedContext: string | null,
   sources: Source[],
   academicContext: AcademicContext | null,
@@ -137,24 +117,27 @@ function buildAdvancedSystemPrompt(
   const promptParts = [
     BASE_SYSTEM_PROMPT,
     "",
+    // Add mode-specific instructions
     MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.study,
     "",
+    // Add conversation context awareness
+    conversationLength > 0 
+      ? `This is message ${conversationLength + 1} in our conversation. Build on what we've discussed.`
+      : "This is the start of our conversation."
   ];
 
-  if (conversationLength > 0) {
-    promptParts.push(`Message ${conversationLength + 1}. Build on discussion.`);
-  }
-
+  // Add academic context if detected
   if (academicContext && academicContext.confidence >= 0.4) {
     const contextString = getContextForPrompt(academicContext);
     if (contextString) {
-      promptParts.push("", contextString);
+      promptParts.push("", `Academic Context: ${contextString}`);
     }
   }
 
+  // Add retrieved context with enhanced formatting
   if (retrievedContext && sources.length > 0) {
     const sourceList = sources.map((s, i) => 
-      `${i + 1}. ${s.documentName}${s.chunkIndex !== undefined ? ` (Section ${s.chunkIndex + 1})` : ''}`
+      `[${i + 1}] ${s.documentName}${s.chunkIndex !== undefined ? ` (Section ${s.chunkIndex + 1})` : ''}`
     ).join('\n');
     
     const contextSection = RAG_CONTEXT_TEMPLATE
@@ -166,6 +149,9 @@ function buildAdvancedSystemPrompt(
   } else {
     promptParts.push("", NO_CONTEXT_INSTRUCTION);
   }
+
+  // Add response format guidelines
+  promptParts.push("", `📝 RESPONSE GUIDELINES:
 
   return promptParts.join("\n");
 }
@@ -179,8 +165,8 @@ function validateRequest(body: unknown): ChatRequestBody | null {
     return null;
   }
 
-  const validModes: Array<"study" | "deepExplore" | "tutor" | "review"> = ["study", "deepExplore", "tutor" as const, "review" as const];
-  const resolvedMode = validModes.includes(mode as "study" | "deepExplore" | "tutor" | "review") 
+  const validModes: Array<"study" | "deepExplore" | "tutor" | "review"> = ["study", "deepExplore", "tutor", "review"];
+  const resolvedMode = validModes.includes(mode as string) 
     ? mode as "study" | "deepExplore" | "tutor" | "review"
     : "study";
 
@@ -199,10 +185,12 @@ function getConfig() {
   const groqApiKey = process.env.GROQ_API_KEY;
   const openaiApiKey = process.env.OPENAI_API_KEY;
   
+  // Prioritize Groq with best available model
   if (groqApiKey) {
     return {
       apiKey: groqApiKey,
       baseUrl: "https://api.groq.com/openai/v1",
+      // Use the most capable model available
       model: process.env.GROQ_MODEL || GROQ_MODEL,
       embeddingModel: "text-embedding-3-small",
       embeddingApiKey: groqApiKey,
@@ -210,6 +198,7 @@ function getConfig() {
     };
   }
   
+  // Fallback to OpenAI
   return {
     apiKey: openaiApiKey,
     baseUrl: process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1",
@@ -231,6 +220,12 @@ function contextToMetadata(context: AcademicContext): AcademicContextMetadata {
   };
 }
 
+let academicContext: AcademicContext | null = null;
+
+// ============================================================================
+// Main POST Handler - Enhanced
+// ============================================================================
+
 export async function POST(request: NextRequest): Promise<NextResponse<ChatResponse | { error: string }>> {
   const startTime = Date.now();
 
@@ -250,6 +245,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     const { message, mode, useRag, userId: rawUserId, sessionId } = validatedBody;
     const userId = rawUserId || DEFAULT_USER_ID;
 
+    // Handle session management
     let currentSessionId = sessionId || undefined;
     let conversationLength = 0;
     
@@ -261,6 +257,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       const messageCount = await getSessionMessageCount(session.id);
       conversationLength = messageCount;
       
+      // Generate smart title from first message
       if (messageCount <= 2) {
         const title = await generateSessionTitle(message);
         await updateSession(session.id, { title, mode: mode as ChatMode });
@@ -269,17 +266,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       console.error("[Chat] Session error:", e);
     }
 
-    const academicContext = parseAcademicContext(message);
+    // Parse academic context from message
+    academicContext = parseAcademicContext(message);
 
     const config = getConfig();
     if (!config.apiKey) {
       return NextResponse.json({ error: "API key not configured. Please set GROQ_API_KEY or OPENAI_API_KEY" }, { status: 500 });
     }
 
+    // Get available documents
     const documents = getDocuments();
     const hasDocuments = documents.length > 0;
     const vectorStoreStats = getStats();
+    console.log(`[Chat] Mode: ${mode}, Documents: ${documents.length}, Session: ${currentSessionId?.slice(0,8)}`);
 
+    // Enhanced RAG retrieval
     let retrievedContext: string | null = null;
     let sources: Source[] = [];
     let retrievalMetadata: RetrievalMetadata | undefined;
@@ -287,6 +288,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
 
     if (useRag && hasDocuments) {
       try {
+        // Generate embedding for semantic search
         const queryEmbedding = await generateEmbedding(message, {
           apiKey: config.embeddingApiKey || config.apiKey,
           baseUrl: config.embeddingBaseUrl,
@@ -295,6 +297,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         
         embeddingGenerated = true;
 
+        // Retrieve relevant context with enhanced parameters
         const retrievalResult = await retrieveContext(message, queryEmbedding, config.embeddingApiKey || config.apiKey, DEFAULT_RAG_CONFIG);
         
         retrievedContext = retrievalResult.context || null;
@@ -321,8 +324,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       }
     }
 
+    // Build enhanced system prompt
     const systemPrompt = buildAdvancedSystemPrompt(mode, retrievedContext, sources, academicContext, conversationLength);
 
+    // Get conversation history for context
     let conversationHistory: Message[] = [];
     if (currentSessionId) {
       try {
@@ -336,12 +341,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       }
     }
 
+    // Construct messages with full context
     const messages: Message[] = [
       { role: "system", content: systemPrompt },
       ...conversationHistory,
       { role: "user", content: message },
     ];
 
+    // Call AI with enhanced parameters
     const chatResponse = await fetch(`${config.baseUrl}/chat/completions`, {
       method: "POST",
       headers: {
@@ -352,10 +359,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         model: config.model,
         messages,
         temperature: 0.7,
-        max_tokens: 4000,
+        max_tokens: 2000,  // Increased for more detailed responses
         top_p: 0.9,
-        frequency_penalty: 0.0,
-        presence_penalty: 0.0,
+        frequency_penalty: 0.1,
+        presence_penalty: 0.1,
       }),
     });
 
@@ -371,10 +378,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
 
     const responseData = await chatResponse.json();
     let assistantMessage = responseData.choices?.[0]?.message?.content ||
-      "I couldn't generate a response. Please try again.";
+      "I apologize, but I couldn't generate a response. Please try again.";
 
-    assistantMessage = assistantMessage.trim();
+    // Clean up any error messages in the response
+    assistantMessage = assistantMessage.replace(/^I can't.*?\.\s*/i, '').replace(/^Sorry,.*?\.\s*/i, '');
 
+    // Save to history
     if (currentSessionId) {
       try {
         await addMessage(currentSessionId, "assistant", assistantMessage);
@@ -384,7 +393,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     }
 
     const totalTime = Date.now() - startTime;
+    console.log(`[Chat] Complete: ${totalTime}ms, Model: ${config.model}, Sources: ${sources.length}`);
 
+    // Return enhanced response
     return NextResponse.json({
       message: assistantMessage,
       mode,
@@ -410,4 +421,3 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     );
   }
 }
-

@@ -1,29 +1,19 @@
-# TODO: DeepExplore Mode Implementation
+# Plan: Refine AI Outputs to Sound Natural and Human-Like
 
-## Task
-Implement "DeepExplore Mode" in the AI Academic Strategist project with structured, analytical, and exploratory AI responses.
+## Status: COMPLETED
 
-## Steps to Complete
+## Changes Made
 
-- [ ] 1. Update backend prompt logic (`app/api/chat/route.ts`)
-  - Enhance deepExplore mode instruction with structured output requirements
-  - Add section formatting guidelines
-  - Define the 6 required sections
+1. **BASE_SYSTEM_PROMPT** - Rewrote to sound like a friendly tutor, not an AI
+2. **MODE_INSTRUCTIONS** - Simplified to natural language, removed bullet points
+3. **RAG_CONTEXT_TEMPLATE** - Removed emoji separators
+4. **buildAdvancedSystemPrompt** - Removed emoji markers and response guidelines
+5. **API Parameters** - Changed:
+   - temperature: 0.7 → 0.65 (more natural)
+   - frequency_penalty: 0.1 → 0.0
+   - presence_penalty: 0.1 → 0.0
 
-- [ ] 2. Add CSS styling for structured responses (`app/globals.css`)
-  - Style DeepExplore section headers
-  - Style content blocks and special sections
-  - Add visual hierarchy for readability
+## Testing
 
-- [ ] 3. Update ChatPanel for structured display (`app/components/ChatPanel.tsx`)
-  - Add logic to detect and format DeepExplore responses
-  - Render sections differently based on mode
-
-## Required Sections for DeepExplore Mode
-1. Concept Overview
-2. Key Principles
-3. Related Topics
-4. Common Confusions
-5. Practical Applications
-6. Exam Relevance
+Test with: `curl -X POST http://localhost:3001/api/chat -H "Content-Type: application/json" -d '{"message": "Explain machine learning", "mode": "study"}'`
 

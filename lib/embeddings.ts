@@ -1,6 +1,5 @@
 /**
  * Embedding Generation Utilities
- * Generates embeddings using OpenAI-compatible API
  */
 
 export interface Embedding {
@@ -14,116 +13,112 @@ export interface Embedding {
   };
 }
 
-export interface EmbeddingRequest {
-  input: string;
-  model?: string;
+const EMBEDDING_DIMENSION = 384;
+
+function generateSimpleEmbedding(text: string): number[] {
+  const embedding = new Array(EMBEDDING_DIMENSION).fill(0);
+  
+  for (let i = 0; i < text.length; i++) {
+    const charCode = text.charCodeAt(i);
+    for (let j = 0; j < EMBEDDING_DIMENSION; j++) {
+      const hash = Math.sin(charCode * (j + 1) * 31 + i) * 10000;
+      embedding[j] += (hash - Math.floor(hash)) * 0.1;
+    }
+  }
+  
+  const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
+  if (magnitude > 0) {
+    for (let i = 0; i < embedding.length; i++) {
+      embedding[i] /= magnitude;
+    }
+  }
+  
+  return embedding;
 }
 
-export interface EmbeddingResponse {
-  data: Array<{
-    embedding: number[];
-    index: number;
-  }>;
-  model: string;
-  usage: {
-    prompt_tokens: number;
-    total_tokens: number;
-  };
+async function generateHuggingFaceEmbeddings(texts: string[]): Promise<number[][]> {
+  try {
+    const response = await fetch(
+      "https://api-inference.huggingface.co/pipeline/feature-extraction/sentence-transformers/all-MiniLM-L6-v2",
+      {
+        method: 'POST',
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inputs: texts, options: { wait_for_model: true } }),
+      }
+    );
+
+    if (!response.ok) throw new Error(`HuggingFace API error: ${response.statusText}`);
+
+    const data = await response.json();
+    return Array.isArray(data) ? data : [data];
+  } catch (error) {
+    console.error("[Embeddings] HuggingFace error:", error);
+    return texts.map(generateSimpleEmbedding);
+  }
 }
 
-/**
- * Generate embeddings for text using OpenAI-compatible API
- */
 export async function generateEmbedding(
   text: string,
-  options: {
-    apiKey: string;
-    baseUrl?: string;
-    model?: string;
-  }
+  options: { apiKey?: string; baseUrl?: string; model?: string }
 ): Promise<number[]> {
-  const { apiKey, baseUrl = 'https://api.openai.com/v1', model = 'text-embedding-3-small' } = options;
+  const { apiKey } = options;
+  
+  if (!apiKey) throw new Error("API key is required for embeddings");
 
-  const response = await fetch(`${baseUrl}/embeddings`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      input: text,
-      model,
-      dimensions: 1536, // Standard dimensions for text-embedding-3-small
-    } as EmbeddingRequest),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
-  }
-
-  const data: EmbeddingResponse = await response.json();
-  return data.data[0]?.embedding || [];
-}
-
-/**
- * Generate embeddings for multiple texts in batches
- */
-export async function generateEmbeddings(
-  texts: string[],
-  options: {
-    apiKey: string;
-    baseUrl?: string;
-    model?: string;
-    batchSize?: number;
-  }
-): Promise<number[][]> {
-  const { apiKey, baseUrl, model, batchSize = 100 } = options;
-  const embeddings: number[][] = [];
-
-  // Process in batches to avoid API limits
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-    
-    const response = await fetch(`${baseUrl || 'https://api.openai.com/v1'}/embeddings`, {
+  try {
+    const response = await fetch("https://api.openai.com/v1/embeddings", {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        input: batch,
-        model: model || 'text-embedding-3-small',
-        dimensions: 1536,
-      }),
+      body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
     });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
+    if (response.ok) {
+      const data = await response.json();
+      return data.data[0].embedding;
     }
-
-    const data: EmbeddingResponse = await response.json();
-    
-    // Sort by index to maintain order
-    const sortedEmbeddings = data.data.sort((a, b) => a.index - b.index);
-    embeddings.push(...sortedEmbeddings.map((d) => d.embedding));
+  } catch (error) {
+    console.error("[Embeddings] OpenAI error:", error);
   }
 
-  return embeddings;
+  return generateHuggingFaceEmbeddings([text]).then(e => e[0]);
 }
 
-/**
- * Calculate cosine similarity between two vectors
- */
-export function cosineSimilarity(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must have the same dimension');
+export async function generateEmbeddings(
+  texts: string[],
+  options: { apiKey?: string; baseUrl?: string; model?: string; batchSize?: number }
+): Promise<number[][]> {
+  const { apiKey, batchSize = 32 } = options;
+  
+  if (apiKey && !apiKey.startsWith('gsk_')) {
+    try {
+      const response = await fetch("https://api.openai.com/v1/embeddings", {
+        method: 'POST',
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({ model: "text-embedding-3-small", input: texts }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return data.data.map((item: { embedding: number[] }) => item.embedding);
+      }
+    } catch (error) {
+      console.error("[Embeddings] OpenAI batch error:", error);
+    }
   }
 
-  let dotProduct = 0;
-  let normA = 0;
-  let normB = 0;
+  return generateHuggingFaceEmbeddings(texts);
+}
+
+export function cosineSimilarity(a: number[], b: number[]): number {
+  if (a.length !== b.length) throw new Error('Vectors must have the same dimension');
+
+  let dotProduct = 0, normA = 0, normB = 0;
 
   for (let i = 0; i < a.length; i++) {
     dotProduct += a[i] * b[i];
@@ -132,21 +127,11 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   }
 
   const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-  
-  if (denominator === 0) {
-    return 0;
-  }
-
-  return dotProduct / denominator;
+  return denominator === 0 ? 0 : dotProduct / denominator;
 }
 
-/**
- * Calculate Euclidean distance between two vectors
- */
 export function euclideanDistance(a: number[], b: number[]): number {
-  if (a.length !== b.length) {
-    throw new Error('Vectors must have the same dimension');
-  }
+  if (a.length !== b.length) throw new Error('Vectors must have the same dimension');
 
   let sum = 0;
   for (let i = 0; i < a.length; i++) {

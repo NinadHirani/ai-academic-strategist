@@ -176,6 +176,38 @@ INSERT INTO context_presets (university_code, university_name, subjects, semeste
 ON CONFLICT (university_code) DO NOTHING;
 
 -- =============================================
+-- CHAT SESSIONS & MESSAGES (For ChatGPT-like history)
+-- =============================================
+
+-- Chat sessions table
+CREATE TABLE IF NOT EXISTS chat_sessions (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+  title TEXT DEFAULT 'New Chat',
+  mode TEXT DEFAULT 'study',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Chat messages table
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  session_id UUID NOT NULL,
+  role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system')),
+  content TEXT NOT NULL,
+  model_used TEXT,
+  tokens_used INTEGER,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  FOREIGN KEY (session_id) REFERENCES chat_sessions(id) ON DELETE CASCADE
+);
+
+-- Indexes for chat queries
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_id ON chat_sessions(user_id);
+CREATE INDEX IF NOT EXISTS idx_chat_sessions_updated_at ON chat_sessions(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_created_at ON chat_messages(created_at);
+
+-- =============================================
 -- ROW LEVEL SECURITY (Optional)
 -- =============================================
 
@@ -184,6 +216,8 @@ ON CONFLICT (university_code) DO NOTHING;
 -- ALTER TABLE user_interactions ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE documents ENABLE ROW LEVEL SECURITY;
 -- ALTER TABLE document_chunks ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE chat_sessions ENABLE ROW LEVEL SECURITY;
+-- ALTER TABLE chat_messages ENABLE ROW LEVEL SECURITY;
 
 -- Policy to allow users to access their own data
 -- CREATE POLICY "Users can view own profile" ON user_profiles

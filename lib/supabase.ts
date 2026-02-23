@@ -1,29 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Get Supabase URL and keys from environment
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
 
-// Supabase client for browser (only initialize if credentials exist)
 export const supabase = supabaseUrl && supabaseAnonKey 
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
 
-// Supabase admin client for server-side operations (service role key)
 export const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY && supabaseUrl
-  ? createClient(
-      supabaseUrl,
-      process.env.SUPABASE_SERVICE_ROLE_KEY,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
+  ? createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+      auth: { autoRefreshToken: false, persistSession: false }
+    })
   : null;
 
-// Database table types
 export interface UserProfile {
   id: string;
   user_id: string;
@@ -85,7 +74,6 @@ export interface ContextPreset {
   semesters: number[];
 }
 
-// Helper function to check Supabase connection
 export async function checkSupabaseConnection(): Promise<boolean> {
   if (!supabase) return false;
   try {
