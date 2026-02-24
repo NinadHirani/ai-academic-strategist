@@ -43,6 +43,16 @@ export async function generateEmbedding(
   }
 ): Promise<number[]> {
   const { apiKey, baseUrl = 'https://api.openai.com/v1', model = 'text-embedding-3-small' } = options;
+  
+  // Groq doesn't support 'dimensions' parameter
+  const isGroq = baseUrl.includes('groq');
+  const requestBody: any = {
+    input: text,
+    model,
+  };
+  if (!isGroq) {
+    requestBody.dimensions = 1536;
+  }
 
   const response = await fetch(`${baseUrl}/embeddings`, {
     method: 'POST',
@@ -50,11 +60,7 @@ export async function generateEmbedding(
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({
-      input: text,
-      model,
-      dimensions: 1536, // Standard dimensions for text-embedding-3-small
-    } as EmbeddingRequest),
+    body: JSON.stringify(requestBody),
   });
 
   if (!response.ok) {
@@ -85,17 +91,23 @@ export async function generateEmbeddings(
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     
+    // Groq doesn't support 'dimensions' parameter
+    const isGroq = baseUrl?.includes('groq');
+    const requestBody: any = {
+      input: batch,
+      model: model || 'text-embedding-3-small',
+    };
+    if (!isGroq) {
+      requestBody.dimensions = 1536;
+    }
+    
     const response = await fetch(`${baseUrl || 'https://api.openai.com/v1'}/embeddings`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
       },
-      body: JSON.stringify({
-        input: batch,
-        model: model || 'text-embedding-3-small',
-        dimensions: 1536,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     if (!response.ok) {

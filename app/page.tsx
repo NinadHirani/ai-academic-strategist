@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
-import Header from "./Header";
-import ModeSwitcher from "./ModeSwitcher";
-import ChatPanel from "./ChatPanel";
-import FileUpload from "./FileUpload";
+import Header from "./components/Header";
+import ModeSwitcher from "./components/ModeSwitcher";
+import ChatPanel from "./components/ChatPanel";
+import FileUpload from "./components/FileUpload";
 
 interface Document {
   id: string;

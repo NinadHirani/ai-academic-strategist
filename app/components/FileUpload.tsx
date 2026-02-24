@@ -95,8 +95,11 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
     }
 
     setIsUploading(false);
-    // Notify parent of document changes
-    onDocumentsChange?.(documents);
+    // Notify parent of document changes - use callback to get updated state
+    setDocuments((prevDocs) => {
+      onDocumentsChange?.(prevDocs);
+      return prevDocs;
+    });
   };
 
   const handleDelete = async (docId: string) => {
@@ -110,8 +113,11 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
         throw new Error(data.error || "Failed to delete document");
       }
 
-      setDocuments((prev) => prev.filter((doc) => doc.id !== docId));
-      onDocumentsChange?.(documents.filter((doc) => doc.id !== docId));
+      setDocuments((prev) => {
+        const filtered = prev.filter((doc) => doc.id !== docId);
+        onDocumentsChange?.(filtered);
+        return filtered;
+      });
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Delete failed";
       setError(errorMessage);
