@@ -364,7 +364,11 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage.content, mode: activeMode }),
+        body: JSON.stringify({ 
+          message: userMessage.content, 
+          mode: activeMode,
+          sessionId: sessionId || undefined 
+        }),
       });
 
       if (!response.ok) {
@@ -373,6 +377,12 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
       }
 
       const data = await response.json();
+
+      // Update session ID if it's a new session
+      if (data.sessionId && !sessionId) {
+        setSessionId(data.sessionId);
+        fetchPastChats(); // Refresh past chats list when new session is created
+      }
 
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
@@ -423,6 +433,24 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
           </div>
         </div>
         <div className="chat-actions">
+          <button 
+            className="new-chat-btn"
+            onClick={() => {
+              setMessages([
+                {
+                  id: "welcome",
+                  role: "assistant",
+                  content: "welcome",
+                  timestamp: new Date(),
+                },
+              ]);
+              setSessionId(null);
+              fetchPastChats(); // Refresh the past chats list
+            }}
+            title="Start new chat"
+          >
+            ✨ New Chat
+          </button>
           <div className="past-chats-dropdown">
             <button 
               className="past-chats-btn"

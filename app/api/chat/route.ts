@@ -3,6 +3,8 @@ import { retrieveContext, getDocuments, RAGConfig, getStats } from "@/lib/rag";
 import { generateEmbedding } from "@/lib/embeddings";
 import { parseAcademicContext, getContextForPrompt, AcademicContext } from "@/lib/context-engine";
 import { getOrCreateSession, addMessage, getConversationContext, generateSessionTitle, updateSession, getSessionMessageCount, ChatMode } from "@/lib/chat-history";
+import { getStudentProfile, getWeakAreas, getStrongAreas } from "@/lib/student-memory";
+import { getUserProfile, updateUserProfile, getProfileForPrompt, processAIResponseForFacts, extractFactsFromMessage } from "@/lib/user-profile-json";
 
 interface ChatRequestBody {
   message: string;
@@ -58,7 +60,7 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
 
 const GROQ_MODEL = "llama-3.3-70b-versatile";
 const DEFAULT_USER_ID = "anonymous";
-const MAX_CHAT_HISTORY_MESSAGES = 15;
+const MAX_CHAT_HISTORY_MESSAGES = 30;
 
 // ============================================================================
 // Humanized AI Output System
@@ -168,13 +170,7 @@ Math & Science:
 Learning & Education:
 📚 books/learning, 📖 reading, ✏️ writing, 📝 notes, 🎓 graduation, 🏫 school/college, 👨‍🏫 teacher, 👨‍💻 student, 💯 score/perfect, 📋 assignment, 📅 schedule, ⏰ deadline
 
-Concepts & Ideas:
-💡 insight/idea, 🔑 key point, ⚡ concept, 🎯 goal/objective, 🔍 research, 🧠 brain/understanding, 💭 thought, ✨ concept/feature, 🎪 concept variety
 
-Actions & Processes:
-🔄 repeat, ⚡ process, ⏩ fast forward, ⏪ rewind, ➡️ next step, ⬇️ output, ⬆️ input, 🔀 shuffle, ▶️ play, ⏹️ stop, 🔃 refresh
-
-Status & Feedback:
 ✅ correct/done, ❌ incorrect, ⚠️ warning, ❗ important, ✔️ completed, ⭕ status, 🔴 error, 🟢 success, 🟡 warning/pending
 
 Comparisons & Differences:
@@ -278,13 +274,47 @@ const SCANNABILITY = `SCANNABILITY:
 - Use bulleted lists for definitions, but keep them concise
 - Break complex information into digestible chunks
 - Use headers (##) to organize longer explanations
-- Make important formulas stand out visually`;
+- Make important formulas stand out visually
+
+BULLET POINT USAGE:
+- Use bullet points for listing multiple related items or concepts
+- Use for enumerating features, characteristics, or components
+- Present steps in a process when not needing sequential order
+- Highlight advantages/disadvantages and summarize key takeaways
+- Keep bullet points concise (one line when possible)
+- Use consistent bullet style (• or -)
+- Limit to 5-7 bullets per section for readability
+- Avoid bullets for single items (write as prose)
+- Avoid bullets for long explanations (use paragraphs)
+- Avoid bullets for sequential steps (use numbered lists)
+- Avoid bullets for comparisons (use tables)`;
 
 const CHECK_FOR_UNDERSTANDING = `CHECK FOR UNDERSTANDING:
 - After longer explanations (2+ paragraphs), you MAY include a quick recap table if it genuinely helps retention
 - The table should be simple: "Quick Recap" | "Practice Question"
 - Skip the table for short answers, definitions, or simple questions
 - If in doubt, skip the table - don't force it`;
+
+// ============================================================================
+// Long-Term Memory Protocol
+// ============================================================================
+
+const LONG_TERM_MEMORY_PROTOCOL = `Role: You are a Context-Aware Assistant with "Long-Term Memory" capabilities. Your goal is to provide a highly personalized experience by utilizing the provided [USER_PROFILE] and [CHAT_HISTORY].
+
+Memory Protocol:
+
+Profile Prioritization: Always check the [USER_PROFILE] before responding. If the user's name (e.g., Ninad), education (e.g., BE at GTU), or interests (e.g., Quantum Machine Learning) are listed, use them to personalize your response naturally.
+
+Contextual Awareness: Use the [CHAT_HISTORY] to understand what was just discussed. Never ask for information that is already present in the Profile or History.
+
+Information Extraction: If the user shares a new permanent fact about themselves (a new job, a change in location, or a new skill like Python or C++), acknowledge it and summarize it so it can be added to the [USER_PROFILE].
+
+No Hallucination: If the profile and history are empty, do not guess user details. Instead, ask friendly questions to begin building their profile.
+
+Response Style: 
+- Professional yet adaptive.
+- Use the user's name periodically to maintain rapport.
+- If the user is a student or professional, tailor technical explanations to their known skill level.`;
 
 const MODE_TONE_INSTRUCTIONS: Record<string, string> = {
   study: "Break concepts into digestible pieces. Use relatable examples. Check understanding as you go - ask 'does that make sense?' or 'got it?'",
@@ -337,10 +367,24 @@ function buildSystemPrompt(
   retrievedContext: string | null,
   sources: Source[],
   academicContext: AcademicContext | null,
-  conversationLength: number
+  conversationLength: number,
+  userProfile?: { name?: string; university?: string; interests?: string[]; weakAreas?: string[] }
 ): string {
   const promptParts = [
     BASE_SYSTEM_PROMPT,
+    "",
+    LONG_TERM_MEMORY_PROTOCOL,
+    "",
+    "---",
+    "",
+    // User Profile Section
+    userProfile ? `[USER_PROFILE]
+${userProfile.name ? `- Name: ${userProfile.name}` : '- Name: Not provided'}
+${userProfile.university ? `- University/Education: ${userProfile.university}` : '- University: Not provided'}
+${userProfile.interests?.length ? `- Interests: ${userProfile.interests.join(', ')}` : '- Interests: Not provided'}
+${userProfile.weakAreas?.length ? `- Areas to Improve: ${userProfile.weakAreas.join(', ')}` : ''}` : '[USER_PROFILE]\n- No profile data available yet. Ask friendly questions to learn about the user!',
+    "",
+    "---",
     "",
     MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.study,
     "",
@@ -517,7 +561,32 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       }
     }
 
-    const systemPrompt = buildSystemPrompt(mode, retrievedContext, sources, academicContext, conversationLength);
+    // Fetch user profile for Long-Term Memory (from JSON file + Supabase)
+    let userProfile: { name?: string; university?: string; interests?: string[]; weakAreas?: string[] } | undefined;
+    let jsonProfile = null;
+    try {
+      // Load from JSON file (persistent memory)
+      jsonProfile = getUserProfile(userId);
+      
+      // Also get from Supabase for additional data
+      const profile = await getStudentProfile(userId);
+      const weakAreas = await getWeakAreas(userId);
+      const strongAreas = await getStrongAreas(userId);
+      
+      // Merge JSON profile with Supabase profile (JSON takes priority for name/university)
+      userProfile = {
+        name: jsonProfile?.name || (profile as any)?.name,
+        university: jsonProfile?.university || (profile as any)?.university || academicContext?.university,
+        interests: jsonProfile?.interests || (profile as any)?.learningPatterns?.difficultConcepts || [],
+        weakAreas: weakAreas || [],
+      };
+    } catch (e) {
+      console.error("[Chat] Profile error:", e);
+    }
+
+    const systemPrompt = buildSystemPrompt(mode, retrievedContext, sources, academicContext, conversationLength, userProfile);
+    
+    console.log('[Chat] Building prompt with userProfile:', JSON.stringify(userProfile));
 
     let conversationHistory: Message[] = [];
     if (currentSessionId) {
@@ -574,6 +643,26 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       } catch (e) {
         console.error("[Chat] Save error:", e);
       }
+    }
+
+    // Auto-update user profile from conversation (JSON file persistence)
+    try {
+      console.log('[Chat] Processing message for facts:', message);
+      const extractedFacts = extractFactsFromMessage(message);
+      console.log('[Chat] Extracted facts:', extractedFacts);
+      
+      if (Object.keys(extractedFacts).length > 0) {
+        const currentProfile = getUserProfile(userId);
+        console.log('[Chat] Current profile:', currentProfile);
+        
+        const updatedProfile = updateUserProfile(userId, {
+          ...currentProfile,
+          ...extractedFacts,
+        });
+        console.log('[Chat] Updated profile:', updatedProfile);
+      }
+    } catch (e) {
+      console.error("[Chat] Profile update error:", e);
     }
 
     const totalTime = Date.now() - startTime;

@@ -77,37 +77,24 @@ async function extractText(content: ArrayBuffer, fileType: string, fileName: str
 }
 
 /**
- * Get API key and base URL - prefer Groq, fallback to OpenAI
+ * Get API key and base URL - use local Ollama embeddings (free, no API key needed)
  */
 function getApiKey(): { apiKey: string | undefined; baseUrl: string; model: string } {
-  const groqKey = process.env.GROQ_API_KEY;
-  if (groqKey) {
-    return {
-      apiKey: groqKey,
-      baseUrl: 'https://api.groq.com/openai/v1',
-      model: 'embedding-english-large-3'  // Groq's embedding model
-    };
-  }
+  // Use local Ollama - no API key needed
   return {
-    apiKey: process.env.OPENAI_API_KEY,
-    baseUrl: 'https://api.openai.com/v1',
-    model: 'text-embedding-3-small'
+    apiKey: undefined,
+    baseUrl: 'http://localhost:11434',
+    model: 'nomic-embed-text'
   };
 }
 
-/**
- * POST /api/documents/upload
- */
+
+    
 export async function POST(request: NextRequest) {
   try {
-    const { apiKey, baseUrl, model } = getApiKey();
-    if (!apiKey) {
-      return NextResponse.json({ error: "API key not configured" }, { status: 500 });
-    }
-
     const formData = await request.formData();
     const file = formData.get("file") as File | null;
-    
+
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
     }
@@ -136,9 +123,12 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Get API config
+    const { apiKey, baseUrl, model } = getApiKey();
+
     // Process document
     const documentId = `doc-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
-    const result = await processDocument(documentId, fileName, text, apiKey, { baseUrl, model });
+    const result = await processDocument(documentId, fileName, text, apiKey || "", { baseUrl, model });
 
     if (!result.success) {
       return NextResponse.json({ error: result.error || "Failed to process" }, { status: 500 });
