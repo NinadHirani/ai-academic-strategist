@@ -223,6 +223,29 @@ body::before {
   color: var(--accent-blue);
 }
 
+/* New Chat Button */
+.new-chat-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.5rem 0.875rem;
+  background: var(--gradient-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-shadow: var(--shadow-glow-blue);
+}
+
+.new-chat-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 0 20px rgba(16, 163, 249, 0.4);
+}
+
 /* Past Chats Dropdown */
 .past-chats-dropdown {
   position: relative;

@@ -1,6 +1,6 @@
 /**
  * Embedding Generation Utilities
- * Generates embeddings using OpenAI-compatible API
+ * Uses local Ollama API for embeddings (free, no API key needed)
  */
 
 export interface Embedding {
@@ -14,25 +14,8 @@ export interface Embedding {
   };
 }
 
-export interface EmbeddingRequest {
-  input: string;
-  model?: string;
-}
-
-export interface EmbeddingResponse {
-  data: Array<{
-    embedding: number[];
-    index: number;
-  }>;
-  model: string;
-  usage: {
-    prompt_tokens: number;
-    total_tokens: number;
-  };
-}
-
 /**
- * Generate embeddings for text using OpenAI-compatible API
+ * Generate embeddings for text using local Ollama API
  */
 export async function generateEmbedding(
   text: string,
@@ -42,25 +25,18 @@ export async function generateEmbedding(
     model?: string;
   }
 ): Promise<number[]> {
-  const { apiKey, baseUrl = 'https://api.openai.com/v1', model = 'text-embedding-3-small' } = options;
+  const { model = 'nomic-embed-text' } = options;
+  const baseUrl = options.baseUrl || 'http://localhost:11434';
   
-  // Groq doesn't support 'dimensions' parameter
-  const isGroq = baseUrl.includes('groq');
-  const requestBody: any = {
-    input: text,
-    model,
-  };
-  if (!isGroq) {
-    requestBody.dimensions = 1536;
-  }
-
-  const response = await fetch(`${baseUrl}/embeddings`, {
+  const response = await fetch(`${baseUrl}/api/embeddings`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify(requestBody),
+    body: JSON.stringify({
+      model,
+      prompt: text,
+    }),
   });
 
   if (!response.ok) {
@@ -68,8 +44,8 @@ export async function generateEmbedding(
     throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
   }
 
-  const data: EmbeddingResponse = await response.json();
-  return data.data[0]?.embedding || [];
+  const data = await response.json();
+  return data.embedding || [];
 }
 
 /**
@@ -84,42 +60,38 @@ export async function generateEmbeddings(
     batchSize?: number;
   }
 ): Promise<number[][]> {
-  const { apiKey, baseUrl, model, batchSize = 100 } = options;
+  const { model = 'nomic-embed-text', batchSize = 100 } = options;
+  const baseUrl = options.baseUrl || 'http://localhost:11434';
   const embeddings: number[][] = [];
 
-  // Process in batches to avoid API limits
+  // Process in batches
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     
-    // Groq doesn't support 'dimensions' parameter
-    const isGroq = baseUrl?.includes('groq');
-    const requestBody: any = {
-      input: batch,
-      model: model || 'text-embedding-3-small',
-    };
-    if (!isGroq) {
-      requestBody.dimensions = 1536;
+    const batchEmbeddings: number[][] = [];
+    
+    for (const text of batch) {
+      const response = await fetch(`${baseUrl}/api/embeddings`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          prompt: text,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
+      }
+
+      const data = await response.json();
+      batchEmbeddings.push(data.embedding || []);
     }
     
-    const response = await fetch(`${baseUrl || 'https://api.openai.com/v1'}/embeddings`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify(requestBody),
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
-    }
-
-    const data: EmbeddingResponse = await response.json();
-    
-    // Sort by index to maintain order
-    const sortedEmbeddings = data.data.sort((a, b) => a.index - b.index);
-    embeddings.push(...sortedEmbeddings.map((d) => d.embedding));
+    embeddings.push(...batchEmbeddings);
   }
 
   return embeddings;
