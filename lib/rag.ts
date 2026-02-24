@@ -23,6 +23,8 @@ export interface RAGConfig {
   chunkOverlap?: number;
   retrievalK?: number;
   similarityThreshold?: number;
+  baseUrl?: string;
+  model?: string;
 }
 
 const DEFAULT_CONFIG: Required<RAGConfig> = {
@@ -30,6 +32,8 @@ const DEFAULT_CONFIG: Required<RAGConfig> = {
   chunkOverlap: 100,
   retrievalK: 5,
   similarityThreshold: 0.3, // Minimum similarity score to include in context
+  baseUrl: 'https://api.openai.com/v1',
+  model: 'text-embedding-3-small'
 };
 
 /**
@@ -62,6 +66,8 @@ export async function processDocument(
     const texts = chunks.map((c) => c.content);
     const embeddings = await generateEmbeddings(texts, {
       apiKey,
+      baseUrl: options.baseUrl,
+      model: options.model,
       batchSize: 100,
     });
 

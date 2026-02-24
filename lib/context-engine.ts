@@ -1,17 +1,7 @@
 /**
  * Academic Context Detection Engine
  * Analyzes user queries to extract structured academic metadata
- * 
- * Supported patterns:
- * - University codes (GTU, MIT, Stanford, etc.)
- * - Semester references (Sem 1-8, Semester 1-8)
- * - Subject abbreviations and full names
- * - Intent detection (exam_preparation, homework_help, concept_explanation, etc.)
  */
-
-// ============================================================================
-// Types
-// ============================================================================
 
 export interface AcademicContext {
   university: string | null;
@@ -32,10 +22,6 @@ export type AcademicIntent =
   | "lecture_notes"
   | "general_query"
   | "unknown";
-
-// ============================================================================
-// University Knowledge Base
-// ============================================================================
 
 const UNIVERSITY_PATTERNS: Record<string, string> = {
   // Indian Universities
@@ -72,10 +58,6 @@ const UNIVERSITY_PATTERNS: Record<string, string> = {
   "university": "Generic University",
   "college": "College",
 };
-
-// ============================================================================
-// Subject Knowledge Base
-// ============================================================================
 
 const SUBJECT_PATTERNS: Record<string, string> = {
   // Computer Science & Programming
@@ -141,15 +123,7 @@ const SUBJECT_PATTERNS: Record<string, string> = {
   "commerce": "Commerce",
 };
 
-// ============================================================================
-// Semester Patterns
-// ============================================================================
-
 const SEMESTER_REGEX = /(?:sem(?:ester)?\.?\s*)(\d{1,2})/gi;
-
-// ============================================================================
-// Intent Keywords
-// ============================================================================
 
 const INTENT_KEYWORDS: Record<AcademicIntent, string[]> = {
   exam_preparation: [
@@ -181,10 +155,6 @@ const INTENT_KEYWORDS: Record<AcademicIntent, string[]> = {
   general_query: [],
   unknown: [],
 };
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
 
 /**
  * Detect university from text
