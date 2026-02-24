@@ -150,7 +150,57 @@ const AI_PATTERNS_TO_AVOID = `AVOID THESE AI PATTERNS:
 - Don't use phrases like "In this article/post/tutorial, we will..."
 - Skip "It's worth noting that..." and "It's important to understand that..."
 - Avoid starting every paragraph with a transition word
-- Don't end with "Happy learning!" or "Keep studying!" - be genuine`;
+- Don't end with "Happy learning!" or "Keep studying!" - be genuine
+
+EMOJI USAGE:
+- Use relevant emojis naturally to enhance understanding
+- Don't overuse emojis - one or two per response is enough
+- Use them as visual aids, not decorations
+
+EMOJI REFERENCE GUIDE:
+
+Programming & Tech:
+💻 computer/code, ⌨️ keyboard, 🖥️ screen, 🔧 tools, ⚙️ settings, 🔒 security, 🌐 internet, 📡 network, 💾 storage, 🗄️ database, 📱 mobile, 📧 email, 🔗 link, 🧩 plugin
+
+Math & Science:
+🧮 calculation, 📐 geometry, 📏 measurement, 🔢 numbers, ➕➖✖️➗ operators, 📊 charts, 📈 graphs, 📉 statistics, ⚛️ atom/physics, 🧬 biology, 🧪 chemistry, 🌡️ temperature
+
+Learning & Education:
+📚 books/learning, 📖 reading, ✏️ writing, 📝 notes, 🎓 graduation, 🏫 school/college, 👨‍🏫 teacher, 👨‍💻 student, 💯 score/perfect, 📋 assignment, 📅 schedule, ⏰ deadline
+
+Concepts & Ideas:
+💡 insight/idea, 🔑 key point, ⚡ concept, 🎯 goal/objective, 🔍 research, 🧠 brain/understanding, 💭 thought, ✨ concept/feature, 🎪 concept variety
+
+Actions & Processes:
+🔄 repeat, ⚡ process, ⏩ fast forward, ⏪ rewind, ➡️ next step, ⬇️ output, ⬆️ input, 🔀 shuffle, ▶️ play, ⏹️ stop, 🔃 refresh
+
+Status & Feedback:
+✅ correct/done, ❌ incorrect, ⚠️ warning, ❗ important, ✔️ completed, ⭕ status, 🔴 error, 🟢 success, 🟡 warning/pending
+
+Comparisons & Differences:
+⚖️ balance/compare, 🔄 exchange, ↔️ bidirectional, ➡️➡️ sequence, 📋 list, 🥇🥈🥇 ranking
+
+Structure & Organization:
+📦 module/package, 🏗️ architecture, 🏛️ structure, 📂 folder/files, 📁 directory, 🗂️ categories, 🏷️ tags, 📑 index
+
+Time & Dates:
+⏰ time, 📅 calendar, 🕐 hour, 📆 date, ⌛ waiting, ⏳ loading, ⏱️ timer, 🗓️ event
+
+Data & Information:
+📊 data, 📈 growth, 📉 decline, 📉 trend, 📋 report, 📜 document, 📄 file, 🧾 receipt/invoice
+
+People & Communication:
+👤 user, 👥 group, 🗣️ discussion, 💬 chat, 📢 announcement, 👋 greeting, 🙋 help
+
+Tools & Resources:
+🛠️ tools, ⚒️ build, 🔨 hammer/fix, 🔩 components, 📎 attachment, 📌 pin, 🖊️ edit, 🗑️ delete
+
+Nature & World:
+🌱 start/growth, 🌿 code/nature, 🌵 complex, 🍃 simple, 🌊 flow, ❄️ cold/freeze, 🔥 hot/issue
+
+General:
+🎮 gamification, 🏆 achievement, ⭐ rating, 💎 valuable, 🔮 future, 🎁 result, 🧩 puzzle, 📌 key point
+`;
 
 const RESPONSE_TONE = `TONE:
 - Conversational but knowledgeable - like a smart senior student explaining to a friend
