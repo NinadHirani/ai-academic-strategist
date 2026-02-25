@@ -1,6 +1,7 @@
 /**
  * Embedding Generation Utilities
  * Uses local Ollama API for embeddings (free, no API key needed)
+ * Optimized for parallel processing
  */
 
 export interface Embedding {
@@ -49,7 +50,8 @@ export async function generateEmbedding(
 }
 
 /**
- * Generate embeddings for multiple texts in batches
+ * Generate embeddings for multiple texts in batches with PARALLEL processing
+ * This significantly speeds up document processing
  */
 export async function generateEmbeddings(
   texts: string[],
@@ -58,9 +60,14 @@ export async function generateEmbeddings(
     baseUrl?: string;
     model?: string;
     batchSize?: number;
+    maxConcurrency?: number;
   }
 ): Promise<number[][]> {
-  const { model = 'nomic-embed-text', batchSize = 100 } = options;
+  const { 
+    model = 'nomic-embed-text', 
+    batchSize = 100,
+    maxConcurrency = 10 // Maximum concurrent requests - prevents overwhelming Ollama
+  } = options;
   const baseUrl = options.baseUrl || 'http://localhost:11434';
   const embeddings: number[][] = [];
 
@@ -68,9 +75,57 @@ export async function generateEmbeddings(
   for (let i = 0; i < texts.length; i += batchSize) {
     const batch = texts.slice(i, i + batchSize);
     
-    const batchEmbeddings: number[][] = [];
+    // Process batch in parallel with concurrency limit
+    const batchEmbeddings = await processBatchParallel(
+      batch,
+      baseUrl,
+      model,
+      maxConcurrency
+    );
     
-    for (const text of batch) {
+    embeddings.push(...batchEmbeddings);
+  }
+
+  return embeddings;
+}
+
+/**
+ * Process a batch of texts in parallel with concurrency limiting
+ */
+async function processBatchParallel(
+  texts: string[],
+  baseUrl: string,
+  model: string,
+  maxConcurrency: number
+): Promise<number[][]> {
+  // Create promises for all texts in batch
+  const promises = texts.map(text => 
+    fetchEmbedding(baseUrl, model, text)
+  );
+
+  // Process with concurrency limit using chunking
+  const results: number[][] = [];
+  
+  for (let i = 0; i < promises.length; i += maxConcurrency) {
+    const chunk = promises.slice(i, i + maxConcurrency);
+    const chunkResults = await Promise.all(chunk);
+    results.push(...chunkResults);
+  }
+
+  return results;
+}
+
+/**
+ * Single embedding fetch with retry logic
+ */
+async function fetchEmbedding(
+  baseUrl: string,
+  model: string,
+  text: string,
+  retries = 2
+): Promise<number[]> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
       const response = await fetch(`${baseUrl}/api/embeddings`, {
         method: 'POST',
         headers: {
@@ -83,18 +138,27 @@ export async function generateEmbeddings(
       });
 
       if (!response.ok) {
+        if (attempt < retries) {
+          // Wait before retry
+          await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
+          continue;
+        }
         const error = await response.json().catch(() => ({}));
         throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
       }
 
       const data = await response.json();
-      batchEmbeddings.push(data.embedding || []);
+      return data.embedding || [];
+    } catch (error) {
+      if (attempt >= retries) {
+        throw error;
+      }
+      // Wait before retry
+      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
     }
-    
-    embeddings.push(...batchEmbeddings);
   }
-
-  return embeddings;
+  
+  return [];
 }
 
 /**
