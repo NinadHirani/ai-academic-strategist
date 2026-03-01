@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { retrieveContext, getDocuments, RAGConfig, getStats } from "@/lib/rag";
+import { retrieveContext, getDocumentsFromSupabase, RAGConfig, getStats } from "@/lib/rag";
 import { generateEmbedding } from "@/lib/embeddings";
 import { parseAcademicContext, getContextForPrompt, AcademicContext } from "@/lib/context-engine";
 import { getOrCreateSession, addMessage, getConversationContext, generateSessionTitle, updateSession, getSessionMessageCount, ChatMode } from "@/lib/chat-history";
@@ -56,7 +56,7 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
   chunkSize: 800,
   chunkOverlap: 150,
   retrievalK: 5,
-  similarityThreshold: 0.15,
+  similarityThreshold: 0.05, // Lowered for better retrieval
 };
 
 const GROQ_MODEL = "llama-3.3-70b-versatile";
@@ -524,15 +524,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       return NextResponse.json({ error: "API key not configured" }, { status: 500 });
     }
 
-    const documents = getDocuments();
+    // Get documents from Supabase directly (bypasses memory cache issue in serverless)
+    const documents = await getDocumentsFromSupabase();
     const hasDocuments = documents.length > 0;
     const vectorStoreStats = getStats();
+
+    console.log(`[Chat] RAG mode: ${useRag}, hasDocuments: ${hasDocuments}, docs:`, documents.length, 'stats:', vectorStoreStats);
 
     let retrievedContext: string | null = null;
     let sources: Source[] = [];
     let retrievalMetadata: RetrievalMetadata | undefined;
 
-    if (useRag && hasDocuments) {
+    // Always attempt RAG retrieval when useRag is true
+    // The vector store will fetch from Supabase if configured
+    if (useRag) {
       try {
         const queryEmbedding = await generateEmbedding(message, {
           apiKey: config.embeddingApiKey || config.apiKey,
@@ -551,6 +556,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
           sources: sources,
           retrievalTime: Date.now() - startTime,
         };
+        
+        console.log(`[Chat] RAG retrieval: ${sources.length} sources found`);
+        if (sources.length > 0) {
+          console.log(`[Chat] Sources:`, sources.map(s => s.documentName).join(', '));
+        }
       } catch (ragError) {
         console.error("[Chat] RAG error:", ragError);
         retrievalMetadata = {

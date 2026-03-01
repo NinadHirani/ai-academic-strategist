@@ -21,11 +21,29 @@ function getEmbeddingConfig(): {
   baseUrl: string;
   model: string;
 } {
-  // Use Groq API key if available (FASTER), otherwise Ollama
+  // Use Groq API key if available (FASTER), otherwise check OpenAI
   const groqApiKey = process.env.GROQ_API_KEY;
+  const openaiApiKey = process.env.OPENAI_API_KEY;
   
+  if (groqApiKey) {
+    return {
+      apiKey: groqApiKey,
+      baseUrl: "https://api.groq.com/openai/v1",
+      model: "text-embedding-3-small",
+    };
+  }
+  
+  if (openaiApiKey) {
+    return {
+      apiKey: openaiApiKey,
+      baseUrl: process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1",
+      model: "text-embedding-3-small",
+    };
+  }
+  
+  // Fallback to Ollama (requires local Ollama server)
   return {
-    apiKey: groqApiKey || "",
+    apiKey: "",
     baseUrl: "http://localhost:11434",
     model: "nomic-embed-text",
   };
