@@ -1,7 +1,8 @@
+
 /**
- * Embedding Generation Utilities
- * Uses local Ollama API for embeddings (free, no API key needed)
- * Optimized for parallel processing
+ * Embedding Generation Utilities - OPTIMIZED FOR SPEED
+ * Uses Groq API for fast embeddings (free tier available)
+ * Fallback to Ollama if needed
  */
 
 export interface Embedding {
@@ -15,8 +16,163 @@ export interface Embedding {
   };
 }
 
+// Simple in-memory cache for embeddings
+const embeddingCache = new Map<string, number[]>();
+const MAX_CACHE_SIZE = 2000;
+
 /**
- * Generate embeddings for text using local Ollama API
+ * Generate embeddings using Groq API (FAST)
+ */
+async function generateWithGroq(
+  texts: string[],
+  apiKey: string
+): Promise<number[][]> {
+  const response = await fetch("https://api.groq.com/openai/v1/embeddings", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: "text-embedding-3-small",
+      input: texts,
+    }),
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(`Groq embedding error: ${error.error?.message || response.statusText}`);
+  }
+
+  const data = await response.json();
+  return data.data
+    .sort((a: any, b: any) => a.index - b.index)
+    .map((item: any) => item.embedding);
+}
+
+/**
+ * Generate embeddings using Ollama (SLOW - fallback)
+ */
+async function generateWithOllama(
+  texts: string[],
+  baseUrl: string,
+  model: string
+): Promise<number[][]> {
+  const embeddings: number[][] = [];
+
+  // Process in parallel batches
+  const batchSize = 20;
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    const promises = batch.map(async (text) => {
+      const response = await fetch(`${baseUrl}/api/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, prompt: text }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Ollama error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.embedding || [];
+    });
+
+    const results = await Promise.all(promises);
+    embeddings.push(...results);
+  }
+
+  return embeddings;
+}
+
+/**
+ * Generate embeddings for multiple texts
+ * Auto-detects: Groq > Ollama
+ */
+export async function generateEmbeddings(
+  texts: string[],
+  options: {
+    apiKey: string;
+    baseUrl?: string;
+    model?: string;
+    batchSize?: number;
+  }
+): Promise<number[][]> {
+  const { apiKey, baseUrl = "http://localhost:11434", model = "nomic-embed-text" } = options;
+
+  // Check cache first - separate cached from uncached
+  const cachedResults: number[][] = [];
+  const uncachedTexts: string[] = [];
+
+  for (let i = 0; i < texts.length; i++) {
+    const text = texts[i];
+    const cacheKey = `groq:${text.substring(0, 100)}`;
+    if (embeddingCache.has(cacheKey)) {
+      cachedResults[i] = embeddingCache.get(cacheKey)!;
+    } else {
+      uncachedTexts.push(text);
+    }
+  }
+
+  // If all cached, return immediately
+  if (uncachedTexts.length === 0) {
+    return cachedResults;
+  }
+
+  let embeddings: number[][];
+
+  // Try Groq first (FASTER)
+  if (apiKey && apiKey.length > 10) {
+    try {
+      console.log(`[Embeddings] Using Groq for ${uncachedTexts.length} texts`);
+      embeddings = await generateWithGroq(uncachedTexts, apiKey);
+
+      // Cache new embeddings
+      let embIndex = 0;
+      for (let i = 0; i < texts.length; i++) {
+        if (!cachedResults[i]) {
+          const cacheKey = `groq:${texts[i].substring(0, 100)}`;
+          if (embeddingCache.size >= MAX_CACHE_SIZE) {
+            const firstKey = embeddingCache.keys().next().value;
+            if (firstKey) embeddingCache.delete(firstKey);
+          }
+          embeddingCache.set(cacheKey, embeddings[embIndex]);
+          cachedResults[i] = embeddings[embIndex];
+          embIndex++;
+        }
+      }
+
+      return cachedResults;
+    } catch (error) {
+      console.warn("[Embeddings] Groq failed, trying Ollama:", error);
+    }
+  }
+
+  // Fallback to Ollama
+  console.log(`[Embeddings] Using Ollama for ${uncachedTexts.length} texts`);
+  embeddings = await generateWithOllama(uncachedTexts, baseUrl, model);
+
+  // Cache new embeddings
+  let embIndex = 0;
+  for (let i = 0; i < texts.length; i++) {
+    if (!cachedResults[i]) {
+      const cacheKey = `ollama:${texts[i].substring(0, 100)}`;
+      if (embeddingCache.size >= MAX_CACHE_SIZE) {
+        const firstKey = embeddingCache.keys().next().value;
+        if (firstKey) embeddingCache.delete(firstKey);
+      }
+      embeddingCache.set(cacheKey, embeddings[embIndex]);
+      cachedResults[i] = embeddings[embIndex];
+      embIndex++;
+    }
+  }
+
+  return cachedResults;
+}
+
+/**
+ * Generate single embedding (for queries)
  */
 export async function generateEmbedding(
   text: string,
@@ -26,23 +182,35 @@ export async function generateEmbedding(
     model?: string;
   }
 ): Promise<number[]> {
-  const { model = 'nomic-embed-text' } = options;
-  const baseUrl = options.baseUrl || 'http://localhost:11434';
-  
+  const { apiKey, baseUrl = "http://localhost:11434", model = "nomic-embed-text" } = options;
+
+  // Check cache
+  const cacheKey = `groq:${text.substring(0, 100)}`;
+  if (embeddingCache.has(cacheKey)) {
+    return embeddingCache.get(cacheKey)!;
+  }
+
+  // Try Groq first
+  if (apiKey && apiKey.length > 10) {
+    try {
+      const results = await generateWithGroq([text], apiKey);
+      const embedding = results[0];
+      embeddingCache.set(cacheKey, embedding);
+      return embedding;
+    } catch {
+      console.warn("[Embeddings] Groq failed, trying Ollama");
+    }
+  }
+
+  // Fallback to Ollama
   const response = await fetch(`${baseUrl}/api/embeddings`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      prompt: text,
-    }),
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model, prompt: text }),
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
+    throw new Error(`Embedding API error: ${response.statusText}`);
   }
 
   const data = await response.json();
@@ -50,123 +218,11 @@ export async function generateEmbedding(
 }
 
 /**
- * Generate embeddings for multiple texts in batches with PARALLEL processing
- * This significantly speeds up document processing
- */
-export async function generateEmbeddings(
-  texts: string[],
-  options: {
-    apiKey: string;
-    baseUrl?: string;
-    model?: string;
-    batchSize?: number;
-    maxConcurrency?: number;
-  }
-): Promise<number[][]> {
-  const { 
-    model = 'nomic-embed-text', 
-    batchSize = 100,
-    maxConcurrency = 10 // Maximum concurrent requests - prevents overwhelming Ollama
-  } = options;
-  const baseUrl = options.baseUrl || 'http://localhost:11434';
-  const embeddings: number[][] = [];
-
-  // Process in batches
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-    
-    // Process batch in parallel with concurrency limit
-    const batchEmbeddings = await processBatchParallel(
-      batch,
-      baseUrl,
-      model,
-      maxConcurrency
-    );
-    
-    embeddings.push(...batchEmbeddings);
-  }
-
-  return embeddings;
-}
-
-/**
- * Process a batch of texts in parallel with concurrency limiting
- */
-async function processBatchParallel(
-  texts: string[],
-  baseUrl: string,
-  model: string,
-  maxConcurrency: number
-): Promise<number[][]> {
-  // Create promises for all texts in batch
-  const promises = texts.map(text => 
-    fetchEmbedding(baseUrl, model, text)
-  );
-
-  // Process with concurrency limit using chunking
-  const results: number[][] = [];
-  
-  for (let i = 0; i < promises.length; i += maxConcurrency) {
-    const chunk = promises.slice(i, i + maxConcurrency);
-    const chunkResults = await Promise.all(chunk);
-    results.push(...chunkResults);
-  }
-
-  return results;
-}
-
-/**
- * Single embedding fetch with retry logic
- */
-async function fetchEmbedding(
-  baseUrl: string,
-  model: string,
-  text: string,
-  retries = 2
-): Promise<number[]> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      const response = await fetch(`${baseUrl}/api/embeddings`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          prompt: text,
-        }),
-      });
-
-      if (!response.ok) {
-        if (attempt < retries) {
-          // Wait before retry
-          await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
-          continue;
-        }
-        const error = await response.json().catch(() => ({}));
-        throw new Error(`Embedding API error: ${error.error?.message || response.statusText}`);
-      }
-
-      const data = await response.json();
-      return data.embedding || [];
-    } catch (error) {
-      if (attempt >= retries) {
-        throw error;
-      }
-      // Wait before retry
-      await new Promise(resolve => setTimeout(resolve, 100 * (attempt + 1)));
-    }
-  }
-  
-  return [];
-}
-
-/**
- * Calculate cosine similarity between two vectors
+ * Calculate cosine similarity
  */
 export function cosineSimilarity(a: number[], b: number[]): number {
   if (a.length !== b.length) {
-    throw new Error('Vectors must have the same dimension');
+    throw new Error("Vectors must have same dimension");
   }
 
   let dotProduct = 0;
@@ -180,20 +236,15 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   }
 
   const denominator = Math.sqrt(normA) * Math.sqrt(normB);
-  
-  if (denominator === 0) {
-    return 0;
-  }
-
-  return dotProduct / denominator;
+  return denominator === 0 ? 0 : dotProduct / denominator;
 }
 
 /**
- * Calculate Euclidean distance between two vectors
+ * Calculate Euclidean distance
  */
 export function euclideanDistance(a: number[], b: number[]): number {
   if (a.length !== b.length) {
-    throw new Error('Vectors must have the same dimension');
+    throw new Error("Vectors must have same dimension");
   }
 
   let sum = 0;
@@ -203,5 +254,12 @@ export function euclideanDistance(a: number[], b: number[]): number {
   }
 
   return Math.sqrt(sum);
+}
+
+/**
+ * Clear the embedding cache
+ */
+export function clearEmbeddingCache(): void {
+  embeddingCache.clear();
 }
 

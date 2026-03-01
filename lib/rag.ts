@@ -5,7 +5,8 @@
 
 import { splitByParagraphs, TextChunk } from './text-chunker';
 import { generateEmbeddings } from './embeddings';
-import { getVectorStore, VectorChunk, SearchResult } from './vector-store';
+import { getVectorStore, VectorChunk, SearchResult, initVectorStore } from './vector-store';
+import { supabaseAdmin } from './supabase';
 
 export interface Document {
   id: string;
@@ -36,6 +37,17 @@ const DEFAULT_CONFIG: Required<RAGConfig> = {
   model: 'text-embedding-3-small'
 };
 
+// Initialize vector store with Supabase if configured
+function initStore() {
+  if (supabaseAdmin && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    initVectorStore({
+      useSupabase: true,
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '',
+    });
+  }
+}
+
 /**
  * Process a document: extract text, chunk, and generate embeddings
  */
@@ -47,6 +59,9 @@ export async function processDocument(
   config: RAGConfig = {}
 ): Promise<{ success: boolean; chunkCount: number; error?: string }> {
   const options = { ...DEFAULT_CONFIG, ...config };
+  
+  // Initialize store
+  initStore();
   const vectorStore = getVectorStore();
 
   try {
@@ -107,6 +122,9 @@ export async function retrieveContext(
   sources: Array<{ documentName: string; chunkIndex: number; score: number }>;
 }> {
   const options = { ...DEFAULT_CONFIG, ...config };
+  
+  // Initialize store
+  initStore();
   const vectorStore = getVectorStore();
 
   // Search for similar chunks
@@ -136,6 +154,8 @@ export async function retrieveContext(
  * Get all uploaded documents
  */
 export function getDocuments(): Document[] {
+  // Initialize store
+  initStore();
   const vectorStore = getVectorStore();
   const docInfos = vectorStore.getDocuments();
 
@@ -154,6 +174,8 @@ export function getDocuments(): Document[] {
  * Delete a document and its embeddings
  */
 export async function deleteDocument(documentId: string): Promise<void> {
+  // Initialize store
+  initStore();
   const vectorStore = getVectorStore();
   await vectorStore.deleteByDocument(documentId);
 }
@@ -162,6 +184,8 @@ export async function deleteDocument(documentId: string): Promise<void> {
  * Get vector store statistics
  */
 export function getStats() {
+  // Initialize store
+  initStore();
   const vectorStore = getVectorStore();
   return vectorStore.getStats();
 }

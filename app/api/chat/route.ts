@@ -5,6 +5,7 @@ import { parseAcademicContext, getContextForPrompt, AcademicContext } from "@/li
 import { getOrCreateSession, addMessage, getConversationContext, generateSessionTitle, updateSession, getSessionMessageCount, ChatMode } from "@/lib/chat-history";
 import { getStudentProfile, getWeakAreas, getStrongAreas } from "@/lib/student-memory";
 import { getUserProfile, updateUserProfile, getProfileForPrompt, processAIResponseForFacts, extractFactsFromMessage } from "@/lib/user-profile-json";
+import { Readable } from "stream";
 
 interface ChatRequestBody {
   message: string;
@@ -360,7 +361,7 @@ const MODE_INSTRUCTIONS: Record<string, string> = {
 
 const RAG_CONTEXT_TEMPLATE = `Reference Material:\n{sources}\n\n{context}`;
 const IMPROVED_CONTEXT_INSTRUCTION = "Use the reference material to inform your answer.";
-const NO_CONTEXT_INSTRUCTION = "No specific documents available. Use what you know to help.";
+const NO_CONTEXT_INSTRUCTION = "No specific documents available. Use your general knowledge to help. IMPORTANT: If you cannot find relevant information in the reference material, do not make up an answer. Instead, respond with: 'I couldn't find relevant information in your uploaded materials to answer this question. Would you like me to explain based on general knowledge, or do you have other documents I should consider?'";
 
 function buildSystemPrompt(
   mode: string,
