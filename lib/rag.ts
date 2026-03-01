@@ -1,6 +1,7 @@
 /**
  * RAG (Retrieval Augmented Generation) Orchestration
  * Coordinates document processing, embedding, retrieval, and generation
+ * Includes comprehensive logging for debugging retrieval
  */
 
 import { splitByParagraphs, TextChunk } from './text-chunker';
@@ -32,20 +33,56 @@ const DEFAULT_CONFIG: Required<RAGConfig> = {
   chunkSize: 1000,
   chunkOverlap: 100,
   retrievalK: 5,
-  similarityThreshold: 0.3, // Minimum similarity score to include in context
+  similarityThreshold: 0.1, // Lowered for better retrieval - was 0.3
   baseUrl: 'https://api.openai.com/v1',
   model: 'text-embedding-3-small'
 };
 
+// Retrieval debug log interface
+export interface RAGRetrievalLog {
+  timestamp: string;
+  query: string;
+  contextLength: number;
+  sourceCount: number;
+  sources: Array<{ documentName: string; chunkIndex: number; score: number }>;
+  error?: string;
+}
+
+// Store retrieval logs for debugging
+const retrievalLogs: RAGRetrievalLog[] = [];
+const MAX_RETRIEVAL_LOGS = 100;
+
+export function getRAGRetrievalLogs(): RAGRetrievalLog[] {
+  return [...retrievalLogs];
+}
+
+export function clearRAGRetrievalLogs(): void {
+  retrievalLogs.length = 0;
+}
+
 // Initialize vector store with Supabase if configured
+let storeInitialized = false;
+
 function initStore() {
-  if (supabaseAdmin && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  if (storeInitialized) return;
+  
+  const hasSupabaseUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const hasServiceKey = !!process.env.SUPABASE_SERVICE_ROLE_KEY;
+  
+  if (hasSupabaseUrl && hasServiceKey) {
     initVectorStore({
       useSupabase: true,
       supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || '',
+      supabaseKey: process.env.SUPABASE_SERVICE_ROLE_KEY,
     });
+    console.log("[RAG] Vector store initialized with Supabase backend");
+  } else {
+    initVectorStore({
+      useSupabase: false,
+    });
+    console.log("[RAG] Vector store initialized with in-memory backend (missing env vars)");
   }
+  storeInitialized = true;
 }
 
 /**
@@ -79,12 +116,22 @@ export async function processDocument(
 
     // Step 2: Generate embeddings for all chunks
     const texts = chunks.map((c) => c.content);
-    const embeddings = await generateEmbeddings(texts, {
+    const embeddingResult = await generateEmbeddings(texts, {
       apiKey,
       baseUrl: options.baseUrl,
       model: options.model,
       batchSize: 100,
     });
+
+    if (!embeddingResult.success || !embeddingResult.embeddings) {
+      return { 
+        success: false, 
+        chunkCount: 0, 
+        error: embeddingResult.error || 'Failed to generate embeddings' 
+      };
+    }
+
+    const embeddings = embeddingResult.embeddings;
 
     // Step 3: Create vector chunks
     const vectorChunks: VectorChunk[] = chunks.map((chunk, index) => ({
@@ -168,6 +215,41 @@ export function getDocuments(): Document[] {
     status: 'ready' as const,
     chunkCount: info.chunkCount,
   }));
+}
+
+/**
+ * Get all documents directly from Supabase (bypasses cache)
+ */
+export async function getDocumentsFromSupabase(): Promise<Document[]> {
+  if (!supabaseAdmin) {
+    return getDocuments();
+  }
+  
+  try {
+    const { data, error } = await supabaseAdmin
+      .from('documents')
+      .select('*')
+      .eq('status', 'ready')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      console.error('[RAG] Error fetching documents:', error);
+      return getDocuments();
+    }
+    
+    return (data || []).map((doc) => ({
+      id: doc.id,
+      name: doc.file_name,
+      type: doc.mime_type || 'application/pdf',
+      size: doc.file_size || 0,
+      uploadedAt: new Date(doc.created_at),
+      status: 'ready' as const,
+      chunkCount: doc.chunk_count || 0,
+    }));
+  } catch (error) {
+    console.error('[RAG] Error fetching from Supabase:', error);
+    return getDocuments();
+  }
 }
 
 /**
