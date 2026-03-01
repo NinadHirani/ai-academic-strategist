@@ -1,0 +1,11 @@
+# Python virtual environment
+venv/
+__pycache__/
+*.pyc
+
+# Saved model artifacts
+saved_model.json
+saved_tokenizer.json
+
+# Test files
+test_smoke.py

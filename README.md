@@ -6,7 +6,7 @@
 
 ## 🌐 Live Demo
 
-**Live URL:** https://ai-project.vercel.app
+**Live URL:** http://localhost:3000
 
 ---
 

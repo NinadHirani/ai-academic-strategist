@@ -278,6 +278,7 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
           onChange={handleInputChange}
           className="file-input"
           disabled={isUploading}
+          title="Upload documents"
         />
 
         <div className="upload-icon">
@@ -355,7 +356,7 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
                     <div className="document-progress">
                       <div 
                         className="document-progress-bar" 
-                        style={{ width: `${doc.progress}%` }}
+                        style={{ width: `${doc.progress}%` } as React.CSSProperties}
                       />
                     </div>
                   )}

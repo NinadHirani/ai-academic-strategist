@@ -9,6 +9,10 @@ import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
+    if (!supabaseAdmin) {
+      return NextResponse.json({ error: "Supabase admin client not initialized" }, { status: 500 });
+    }
+
     // Get documents
     const { data: documents, error: docError } = await supabaseAdmin
       .from('documents')

@@ -90,8 +90,8 @@ body::before {
 .header {
   padding: 1rem 1.5rem;
   background: rgba(10, 10, 10, 0.8);
-  backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
   border-bottom: 1px solid var(--border-subtle);
   position: sticky;
   top: 0;
@@ -456,6 +456,7 @@ body::before {
   background: var(--gradient-primary);
   -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   -webkit-mask-composite: xor;
+  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
   mask-composite: exclude;
 }
 
@@ -1290,4 +1291,9 @@ body::before {
   .logo-text {
     font-size: 1rem;
   }
+}
+
+/* Nav link sandbox accent */
+.nav-link-sandbox {
+  color: #a855f7;
 }
