@@ -71,14 +71,16 @@ CREATE INDEX IF NOT EXISTS idx_pyqs_subject_unit ON pyqs(subject, unit);
 -- DOCUMENTS & VECTORS
 -- =============================================
 
--- Documents metadata
+-- Documents metadata (updated with storage support)
 CREATE TABLE IF NOT EXISTS documents (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  name TEXT NOT NULL,
-  type TEXT NOT NULL,
+  user_id TEXT DEFAULT 'anonymous',
+  file_name TEXT NOT NULL,
+  storage_path TEXT,
+  file_size INTEGER,
+  mime_type TEXT,
   content TEXT,
   chunk_count INTEGER DEFAULT 0,
-  user_id TEXT DEFAULT 'anonymous',
   status TEXT DEFAULT 'processing',
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
