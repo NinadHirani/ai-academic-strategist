@@ -1,0 +1,66 @@
+<parameter name="content"># Table Fix Notes
+
+The markdown parser needs table support. Here's the updated function:
+
+```
+javascript
+// Simple markdown parser for rendering formatted text
+function parseMarkdown(content: string): string {
+  let html = content;
+  
+  // Tables - process first
+  const tableRegex = /(\|.+\|\n)+/g;
+  html = html.replace(tableRegex, (tableBlock) => {
+    const rows = tableBlock.trim().split('\n');
+    let tableHtml = '<table class="md-table">';
+    
+    for (const row of rows) {
+      // Skip separator rows (|---|)
+      if (/^\|[\s-]+\|$/.test(row)) continue;
+      
+      const cells = row.slice(1, -1).split('|').map((c: string) => c.trim());
+      tableHtml += '<tr>';
+      for (const cell of cells) {
+        tableHtml += `<td>${cell}</td>`;
+      }
+      tableHtml += '</tr>';
+    }
+    
+    tableHtml += '</table>';
+    return tableHtml;
+  });
+  
+  // Headers
+  html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+  html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+  html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+  
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  
+  // Bullet points
+  html = html.replace(/^• (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+  
+  // Wrap consecutive <li> elements in <ul>
+  html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
+  
+  // Line breaks
+  html = html.replace(/\n\n/g, '</p><p>');
+  html = html.replace(/\n/g, '<br/>');
+  
+  // Wrap in paragraph (but not if there's a table)
+  if (!html.includes('<table')) {
+    html = '<p>' + html + '</p>';
+  }
+  
+  // Clean up
+  html = html.replace(/<p><\/p>/g, '');
+  html = html.replace(/<p><br\/>/g, '<p>');
+  html = html.replace(/<br\/><\/p>/g, '</p>');
+  
+  return html;
+}
+```
+</parameter>

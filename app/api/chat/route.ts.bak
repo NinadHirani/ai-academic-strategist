@@ -1,0 +1,423 @@
+import { NextRequest, NextResponse } from "next/server";
+import { retrieveContext, getDocuments, RAGConfig, getStats } from "@/lib/rag";
+import { generateEmbedding } from "@/lib/embeddings";
+import { parseAcademicContext, getContextForPrompt, AcademicContext } from "@/lib/context-engine";
+import { getOrCreateSession, addMessage, getConversationContext, generateSessionTitle, updateSession, getSessionMessageCount, ChatMode } from "@/lib/chat-history";
+
+// ============================================================================
+// Types
+// ============================================================================
+
+interface ChatRequestBody {
+  message: string;
+  mode: "study" | "deepExplore" | "tutor" | "review";
+  useRag?: boolean;
+  userId?: string;
+  confidenceLevel?: "high" | "medium" | "low";
+  sessionId?: string;
+  stream?: boolean;
+}
+
+interface Message {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+interface Source {
+  documentName: string;
+  chunkIndex: number;
+  score: number;
+  content?: string;
+}
+
+interface RetrievalMetadata {
+  retrieved: boolean;
+  sourceCount: number;
+  sources: Source[];
+  retrievalTime?: number;
+  embeddingGenerated?: boolean;
+  vectorStoreStats?: any;
+}
+
+interface AcademicContextMetadata {
+  university: string | null;
+  semester: number | null;
+  subject: string | null;
+  subjectCode: string | null;
+  intent: string;
+  confidence: number;
+}
+
+interface ChatResponse {
+  message: string;
+  mode: string;
+  hasDocuments: boolean;
+  retrieval?: RetrievalMetadata;
+  academicContext?: AcademicContextMetadata;
+  sessionId?: string;
+  error?: string;
+  debug?: any;
+}
+
+// ============================================================================
+// Configuration - UPGRADED for Modern AI Performance
+// ============================================================================
+
+const DEFAULT_RAG_CONFIG: RAGConfig = {
+  chunkSize: 800,        // Increased for more context
+  chunkOverlap: 150,      // Better overlap for continuity
+  retrievalK: 5,          // More chunks for better context
+  similarityThreshold: 0.15, // Balanced threshold
+};
+
+// Use the best available model
+const GROQ_MODEL = "llama-3.3-70b-versatile";  // Upgraded from llama-3.1-8b-instant
+const DEFAULT_USER_ID = "anonymous";
+const MAX_CHAT_HISTORY_MESSAGES = 15;  // Increased for better context
+
+// ============================================================================
+// Enhanced System Prompts - Natural, Human-like Responses
+// ============================================================================
+
+const BASE_SYSTEM_PROMPT = `You are a knowledgeable and friendly tutor who genuinely enjoys helping students learn. 
+Think and explain things step-by-step naturally, like you're having a conversation with a curious friend.
+Use real-world examples when helpful. If something's unclear, acknowledge it honestly.
+Keep your explanations clear and accessible without being condescending.`;
+
+const MODE_INSTRUCTIONS: Record<string, string> = {
+  study: `Help the student understand by breaking down concepts into manageable pieces. Use analogies and examples when they make things clearer. Feel free to ask questions to check understanding.`,
+
+  deepExplore: `Go deep into the topic with thorough explanations. Show how concepts connect to each other and to real-world applications. Address common confusions and provide context that helps build true understanding.`,
+
+  tutor: `Guide the learner through problems with questions rather than giving answers outright. Build on what they already know and help them discover solutions themselves.`,
+
+  review: `Help check understanding with practice questions and feedback. Identify patterns in mistakes and suggest focused areas to improve.`
+};
+
+const RAG_CONTEXT_TEMPLATE = `Reference Material:
+{sources}
+
+{context}`;
+
+const IMPROVED_CONTEXT_INSTRUCTION = `Use the reference material to inform your answer. If it doesn't fully cover something, feel free to add from your knowledge.`;
+
+const NO_CONTEXT_INSTRUCTION = `No specific documents available. Use what you know to help out, and suggest good resources if you can.`;
+
+// ============================================================================
+// Enhanced Helper Functions
+// ============================================================================
+
+function buildAdvancedSystemPrompt(
+  mode: string,
+  retrievedContext: string | null,
+  sources: Source[],
+  academicContext: AcademicContext | null,
+  conversationLength: number
+): string {
+  const promptParts = [
+    BASE_SYSTEM_PROMPT,
+    "",
+    // Add mode-specific instructions
+    MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.study,
+    "",
+    // Add conversation context awareness
+    conversationLength > 0 
+      ? `This is message ${conversationLength + 1} in our conversation. Build on what we've discussed.`
+      : "This is the start of our conversation."
+  ];
+
+  // Add academic context if detected
+  if (academicContext && academicContext.confidence >= 0.4) {
+    const contextString = getContextForPrompt(academicContext);
+    if (contextString) {
+      promptParts.push("", `Academic Context: ${contextString}`);
+    }
+  }
+
+  // Add retrieved context with enhanced formatting
+  if (retrievedContext && sources.length > 0) {
+    const sourceList = sources.map((s, i) => 
+      `[${i + 1}] ${s.documentName}${s.chunkIndex !== undefined ? ` (Section ${s.chunkIndex + 1})` : ''}`
+    ).join('\n');
+    
+    const contextSection = RAG_CONTEXT_TEMPLATE
+      .replace("{sources}", sourceList)
+      .replace("{context}", retrievedContext);
+    
+    promptParts.push("", contextSection);
+    promptParts.push("", IMPROVED_CONTEXT_INSTRUCTION);
+  } else {
+    promptParts.push("", NO_CONTEXT_INSTRUCTION);
+  }
+
+  // Add response format guidelines
+  promptParts.push("", `📝 RESPONSE GUIDELINES:
+
+  return promptParts.join("\n");
+}
+
+function validateRequest(body: unknown): ChatRequestBody | null {
+  if (!body || typeof body !== "object") return null;
+
+  const { message, mode, useRag, userId, confidenceLevel, sessionId, stream } = body as Record<string, unknown>;
+
+  if (!message || typeof message !== "string" || message.trim().length === 0) {
+    return null;
+  }
+
+  const validModes: Array<"study" | "deepExplore" | "tutor" | "review"> = ["study", "deepExplore", "tutor", "review"];
+  const resolvedMode = validModes.includes(mode as string) 
+    ? mode as "study" | "deepExplore" | "tutor" | "review"
+    : "study";
+
+  return {
+    message: message.trim(),
+    mode: resolvedMode,
+    useRag: useRag === undefined ? true : Boolean(useRag),
+    userId: typeof userId === "string" ? userId : DEFAULT_USER_ID,
+    confidenceLevel: typeof confidenceLevel === "string" ? confidenceLevel as "high" | "medium" | "low" : undefined,
+    sessionId: typeof sessionId === "string" ? sessionId : undefined,
+    stream: Boolean(stream),
+  };
+}
+
+function getConfig() {
+  const groqApiKey = process.env.GROQ_API_KEY;
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  
+  // Prioritize Groq with best available model
+  if (groqApiKey) {
+    return {
+      apiKey: groqApiKey,
+      baseUrl: "https://api.groq.com/openai/v1",
+      // Use the most capable model available
+      model: process.env.GROQ_MODEL || GROQ_MODEL,
+      embeddingModel: "text-embedding-3-small",
+      embeddingApiKey: groqApiKey,
+      embeddingBaseUrl: "https://api.groq.com/openai/v1",
+    };
+  }
+  
+  // Fallback to OpenAI
+  return {
+    apiKey: openaiApiKey,
+    baseUrl: process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1",
+    model: process.env.OPENAI_MODEL || "gpt-4o-mini",
+    embeddingModel: "text-embedding-3-small",
+    embeddingApiKey: openaiApiKey,
+    embeddingBaseUrl: process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1",
+  };
+}
+
+function contextToMetadata(context: AcademicContext): AcademicContextMetadata {
+  return {
+    university: context.university,
+    semester: context.semester,
+    subject: context.subject,
+    subjectCode: context.subjectCode,
+    intent: context.intent,
+    confidence: context.confidence,
+  };
+}
+
+let academicContext: AcademicContext | null = null;
+
+// ============================================================================
+// Main POST Handler - Enhanced
+// ============================================================================
+
+export async function POST(request: NextRequest): Promise<NextResponse<ChatResponse | { error: string }>> {
+  const startTime = Date.now();
+
+  try {
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    }
+
+    const validatedBody = validateRequest(body);
+    if (!validatedBody) {
+      return NextResponse.json({ error: "Message required and must be a string" }, { status: 400 });
+    }
+
+    const { message, mode, useRag, userId: rawUserId, sessionId } = validatedBody;
+    const userId = rawUserId || DEFAULT_USER_ID;
+
+    // Handle session management
+    let currentSessionId = sessionId || undefined;
+    let conversationLength = 0;
+    
+    try {
+      const session = await getOrCreateSession(userId, currentSessionId);
+      currentSessionId = session.id;
+      await addMessage(session.id, "user", message);
+      
+      const messageCount = await getSessionMessageCount(session.id);
+      conversationLength = messageCount;
+      
+      // Generate smart title from first message
+      if (messageCount <= 2) {
+        const title = await generateSessionTitle(message);
+        await updateSession(session.id, { title, mode: mode as ChatMode });
+      }
+    } catch (e) {
+      console.error("[Chat] Session error:", e);
+    }
+
+    // Parse academic context from message
+    academicContext = parseAcademicContext(message);
+
+    const config = getConfig();
+    if (!config.apiKey) {
+      return NextResponse.json({ error: "API key not configured. Please set GROQ_API_KEY or OPENAI_API_KEY" }, { status: 500 });
+    }
+
+    // Get available documents
+    const documents = getDocuments();
+    const hasDocuments = documents.length > 0;
+    const vectorStoreStats = getStats();
+    console.log(`[Chat] Mode: ${mode}, Documents: ${documents.length}, Session: ${currentSessionId?.slice(0,8)}`);
+
+    // Enhanced RAG retrieval
+    let retrievedContext: string | null = null;
+    let sources: Source[] = [];
+    let retrievalMetadata: RetrievalMetadata | undefined;
+    let embeddingGenerated = false;
+
+    if (useRag && hasDocuments) {
+      try {
+        // Generate embedding for semantic search
+        const queryEmbedding = await generateEmbedding(message, {
+          apiKey: config.embeddingApiKey || config.apiKey,
+          baseUrl: config.embeddingBaseUrl,
+          model: config.embeddingModel,
+        });
+        
+        embeddingGenerated = true;
+
+        // Retrieve relevant context with enhanced parameters
+        const retrievalResult = await retrieveContext(message, queryEmbedding, config.embeddingApiKey || config.apiKey, DEFAULT_RAG_CONFIG);
+        
+        retrievedContext = retrievalResult.context || null;
+        sources = retrievalResult.sources;
+
+        retrievalMetadata = {
+          retrieved: sources.length > 0,
+          sourceCount: sources.length,
+          sources: sources,
+          retrievalTime: Date.now() - startTime,
+          embeddingGenerated,
+          vectorStoreStats,
+        };
+      } catch (ragError) {
+        console.error("[Chat] RAG error:", ragError);
+        retrievalMetadata = {
+          retrieved: false,
+          sourceCount: 0,
+          sources: [],
+          retrievalTime: Date.now() - startTime,
+          embeddingGenerated,
+          vectorStoreStats,
+        };
+      }
+    }
+
+    // Build enhanced system prompt
+    const systemPrompt = buildAdvancedSystemPrompt(mode, retrievedContext, sources, academicContext, conversationLength);
+
+    // Get conversation history for context
+    let conversationHistory: Message[] = [];
+    if (currentSessionId) {
+      try {
+        const historyMessages = await getConversationContext(currentSessionId, MAX_CHAT_HISTORY_MESSAGES);
+        conversationHistory = historyMessages.map(msg => ({
+          role: msg.role as "user" | "assistant" | "system",
+          content: msg.content,
+        }));
+      } catch (e) {
+        console.error("[Chat] History error:", e);
+      }
+    }
+
+    // Construct messages with full context
+    const messages: Message[] = [
+      { role: "system", content: systemPrompt },
+      ...conversationHistory,
+      { role: "user", content: message },
+    ];
+
+    // Call AI with enhanced parameters
+    const chatResponse = await fetch(`${config.baseUrl}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      body: JSON.stringify({
+        model: config.model,
+        messages,
+        temperature: 0.7,
+        max_tokens: 2000,  // Increased for more detailed responses
+        top_p: 0.9,
+        frequency_penalty: 0.1,
+        presence_penalty: 0.1,
+      }),
+    });
+
+    if (!chatResponse.ok) {
+      const errorData = await chatResponse.json().catch(() => ({}));
+      const errorMsg = errorData.error?.message || "AI request failed";
+      console.error("[Chat] API Error:", errorMsg);
+      return NextResponse.json(
+        { error: errorMsg },
+        { status: chatResponse.status }
+      );
+    }
+
+    const responseData = await chatResponse.json();
+    let assistantMessage = responseData.choices?.[0]?.message?.content ||
+      "I apologize, but I couldn't generate a response. Please try again.";
+
+    // Clean up any error messages in the response
+    assistantMessage = assistantMessage.replace(/^I can't.*?\.\s*/i, '').replace(/^Sorry,.*?\.\s*/i, '');
+
+    // Save to history
+    if (currentSessionId) {
+      try {
+        await addMessage(currentSessionId, "assistant", assistantMessage);
+      } catch (e) {
+        console.error("[Chat] Save error:", e);
+      }
+    }
+
+    const totalTime = Date.now() - startTime;
+    console.log(`[Chat] Complete: ${totalTime}ms, Model: ${config.model}, Sources: ${sources.length}`);
+
+    // Return enhanced response
+    return NextResponse.json({
+      message: assistantMessage,
+      mode,
+      hasDocuments,
+      retrieval: retrievalMetadata,
+      academicContext: contextToMetadata(academicContext),
+      sessionId: currentSessionId,
+      debug: {
+        model: config.model,
+        responseTime: totalTime,
+        documentsCount: documents.length,
+        hasRagContext: !!(retrievedContext && sources.length > 0),
+        sourcesFound: sources.length,
+        conversationLength,
+      }
+    });
+
+  } catch (error) {
+    console.error("[Chat] Error:", error);
+    return NextResponse.json(
+      { error: "An unexpected error occurred. Please try again." },
+      { status: 500 }
+    );
+  }
+}
