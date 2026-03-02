@@ -12,6 +12,7 @@ export default function Header() {
         </div>
         <nav className="nav-links">
           <a href="/" className="nav-link">Home</a>
+          <a href="/copilot" className="nav-link nav-link-copilot">🎓 Academic Copilot</a>
           <a href="/sandbox" className="nav-link nav-link-sandbox">🧪 Mini GPT Lab</a>
           <a href="#" className="nav-link">About</a>
         </nav>

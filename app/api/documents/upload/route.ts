@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { processDocument } from "@/lib/rag";
 import { processDocumentFile, validateFile } from "@/lib/document-processor";
 import { supabaseAdmin } from "@/lib/supabase";
+import { randomUUID } from "crypto";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const BUCKET_NAME = "documents";
@@ -198,8 +199,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     console.log(`[Upload] Processing: ${fileName} (${file.size} bytes)`);
 
-    // Generate document ID
-    const documentId = `doc-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    // Generate document ID (proper UUID for Supabase compatibility)
+    const documentId = randomUUID();
 
     // Try to upload to Supabase Storage
     const storageResult = await uploadToSupabaseStorage(file, userId);

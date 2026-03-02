@@ -60,15 +60,11 @@ export default function SandboxPage() {
     <div className="app-container">
       {/* Header */}
       <header className="header">
-        <div className="header-content" style={{ maxWidth: "1100px" }}>
+        <div className="header-content max-width-1100">
           <div className="logo">
             <span className="logo-icon">🎯</span>
             <span className="logo-text">Exam Prompt Builder</span>
-            <span className="logo-badge" style={{
-              background: "rgba(168, 85, 247, 0.15)",
-              borderColor: "rgba(168, 85, 247, 0.3)",
-              color: "#a855f7"
-            }}>Prompt Maker</span>
+            <span className="logo-badge badge-purple">Prompt Maker</span>
           </div>
           <nav className="nav-links">
             <a href="/" className="nav-link">← Back to Study AI</a>
@@ -76,42 +72,24 @@ export default function SandboxPage() {
         </div>
       </header>
 
-      <main className="main-content" style={{ maxWidth: "1100px" }}>
+      <main className="main-content max-width-1100">
         {/* Hero */}
-        <div className="hero-section" style={{ paddingBottom: "0.5rem" }}>
-          <h1 className="hero-title" style={{ fontSize: "1.5rem" }}>
+        <div className="hero-section pb-05rem">
+          <h1 className="hero-title fs-15rem">
             Exam Prompt Builder
           </h1>
-          <p className="hero-subtitle" style={{ fontSize: "0.85rem" }}>
+          <p className="hero-subtitle fs-085rem">
             Build focused, rubric-aligned prompts for exam prep. Copy into the main Study AI for answers.
           </p>
         </div>
 
         {/* Tabs */}
-        <div style={{
-          display: "flex",
-          gap: "0.25rem",
-          marginBottom: "1.25rem",
-          borderBottom: "1px solid var(--border-subtle)",
-          paddingBottom: "0",
-        }}>
+        <div className="flex gap-025 mb-125 border-bottom-subtle pb-0">
           {(["study", "about"] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              style={{
-                padding: "0.6rem 1rem",
-                background: activeTab === tab ? "var(--bg-tertiary)" : "transparent",
-                border: "1px solid transparent",
-                borderBottom: activeTab === tab ? "2px solid var(--accent-blue)" : "2px solid transparent",
-                borderRadius: "var(--radius-sm) var(--radius-sm) 0 0",
-                color: activeTab === tab ? "var(--text-primary)" : "var(--text-tertiary)",
-                fontSize: "0.8rem",
-                fontWeight: activeTab === tab ? 600 : 400,
-                cursor: "pointer",
-                textTransform: "capitalize",
-                transition: "all 0.15s ease",
-              }}
+              className={`tab-btn ${activeTab === tab ? 'active' : ''}`}
             >
               {tab === "study" && "🎯 "}
               {tab === "about" && "📖 "}
@@ -124,12 +102,12 @@ export default function SandboxPage() {
         {/* STUDY (EXAM MODE) TAB */}
         {/* ================================================================ */}
         {activeTab === "study" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
-            <div style={{ padding: "1rem", background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)" }}>
+          <div className="flex-col gap-1rem">
+            <div className="p-1rem bg-secondary radius-md border-subtle">
                             {/* Tips/examples for each mode */}
-                            <div style={{ marginBottom: "0.75rem" }}>
-                              <span style={{ fontSize: "0.8rem", color: "var(--accent-blue)", fontWeight: 600 }}>Tip:</span>
-                              <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)", marginLeft: "0.5rem" }}>
+                            <div className="mb-075">
+                              <span className="fs-08rem accent-blue fw-600">Tip:</span>
+                              <span className="fs-08rem text-secondary ml-05"> 
                                 {getModeTip(studyMode)}
                               </span>
                             </div>
@@ -156,29 +134,19 @@ export default function SandboxPage() {
                                 setRecapStyle(["one-line", "summary", "none"][Math.floor(Math.random() * 3)]);
                                 setCustomInstructions("");
                               }}
-                              style={{
-                                marginBottom: "0.75rem",
-                                padding: "0.5rem 1rem",
-                                background: "var(--gradient-primary)",
-                                color: "white",
-                                border: "none",
-                                borderRadius: "var(--radius-sm)",
-                                fontWeight: 600,
-                                fontSize: "0.85rem",
-                                cursor: "pointer",
-                              }}
+                              className="btn-randomize"
                             >
                               🎲 Randomize
                             </button>
-              <h3 style={{ color: "var(--accent-blue)", marginBottom: "0.5rem" }}>Exam Study Prompt Builder</h3>
-              <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginBottom: "0.75rem" }}>
+              <h3 className="accent-blue mb-05">Exam Study Prompt Builder</h3>
+              <p className="fs-085rem text-secondary mb-075">
                 Build a concise, exam-style prompt you can paste into the main AI. No training needed; focused on retrieval, hints, and rubric-aligned answers.
               </p>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))", gap: "0.75rem" }}>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Mode</span>
-                  <select value={studyMode} onChange={(e) => setStudyMode(e.target.value)} style={inputStyle}>
+              <div className="grid grid-cols-auto-fill-240 gap-075">
+                <label className="flex-col gap-035">
+                  <span className="fs-07rem text-tertiary uppercase ls-005">Mode</span>
+                  <select value={studyMode} onChange={(e) => setStudyMode(e.target.value)} className="input-style">
                     <option value="concept-refresh">Concept Refresh</option>
                     <option value="formula-drill">Formula Drill</option>
                     <option value="past-paper">Past-Paper Style</option>

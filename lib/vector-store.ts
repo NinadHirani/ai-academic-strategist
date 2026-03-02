@@ -7,6 +7,7 @@
 
 import { cosineSimilarity, euclideanDistance } from "./embeddings";
 import { createClient } from "@supabase/supabase-js";
+import { saveChunksToDisk, loadChunksFromDisk, clearPersistedData } from "./vector-persistence";
 
 // ============================================================================
 // Types
@@ -241,9 +242,8 @@ class SupabaseVectorStore {
     }
 
     try {
-      // Insert chunks into Supabase
+      // Insert chunks into Supabase — omit `id` so DB auto-generates UUID
       const records = chunks.map((chunk) => ({
-        id: chunk.id,
         document_id: chunk.metadata.documentId,
         chunk_index: chunk.metadata.chunkIndex,
         content: chunk.content,
@@ -490,15 +490,63 @@ class SupabaseVectorStore {
 // ============================================================================
 
 /**
- * In-memory vector store implementation with caching
+ * In-memory vector store implementation with caching and file-based persistence
  */
 class InMemoryVectorStore {
   private chunks: Map<string, VectorChunk> = new Map();
   private documentChunks: Map<string, VectorChunk[]> = new Map();
   private similarityMetric: SimilarityMetric;
+  private loaded = false;
 
   constructor(options: VectorStoreOptions = {}) {
     this.similarityMetric = options.similarityMetric || "cosine";
+    // Auto-load persisted data on creation
+    this.loadFromDisk();
+  }
+
+  /**
+   * Load previously persisted data from disk
+   */
+  private loadFromDisk(): void {
+    if (this.loaded) return;
+    this.loaded = true;
+    try {
+      const persisted = loadChunksFromDisk();
+      if (persisted.length > 0) {
+        for (const item of persisted) {
+          const chunk: VectorChunk = {
+            id: item.id,
+            content: item.content,
+            embedding: item.embedding,
+            metadata: {
+              documentId: item.metadata.documentId,
+              documentName: item.metadata.documentName,
+              chunkIndex: item.metadata.chunkIndex,
+              createdAt: new Date(item.metadata.createdAt),
+              userId: item.metadata.userId,
+            },
+          };
+          this.chunks.set(chunk.id, chunk);
+          const docChunks = this.documentChunks.get(chunk.metadata.documentId) || [];
+          docChunks.push(chunk);
+          this.documentChunks.set(chunk.metadata.documentId, docChunks);
+        }
+        console.log(`[InMemoryVectorStore] Restored ${persisted.length} chunks from disk`);
+      }
+    } catch (error) {
+      console.error("[InMemoryVectorStore] Load error:", error);
+    }
+  }
+
+  /**
+   * Persist current data to disk
+   */
+  private saveToDisk(): void {
+    try {
+      saveChunksToDisk(this.chunks as any);
+    } catch (error) {
+      console.error("[InMemoryVectorStore] Save error:", error);
+    }
   }
 
   async add(chunks: VectorChunk[]): Promise<void> {
@@ -511,6 +559,8 @@ class InMemoryVectorStore {
     }
 
     clearCache();
+    // Persist to disk so data survives hot reloads
+    this.saveToDisk();
   }
 
   async search(
@@ -588,6 +638,7 @@ class InMemoryVectorStore {
 
     this.documentChunks.delete(documentId);
     clearCache();
+    this.saveToDisk();
   }
 
   getDocuments(): DocumentInfo[] {
@@ -612,6 +663,7 @@ class InMemoryVectorStore {
     this.chunks.clear();
     this.documentChunks.clear();
     clearCache();
+    clearPersistedData();
   }
 
   clearCache(): void {

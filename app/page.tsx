@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Header from "./components/Header";
 import ModeSwitcher from "./components/ModeSwitcher";
 import ChatPanel from "./components/ChatPanel";
@@ -19,9 +19,36 @@ export default function Home() {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [showUpload, setShowUpload] = useState(false);
 
-  const handleDocumentsChange = (docs: Document[]) => {
+  // Auto-load existing documents on mount
+  useEffect(() => {
+    async function fetchExistingDocuments() {
+      try {
+        const response = await fetch("/api/documents");
+        const data = await response.json();
+        if (data.documents && data.documents.length > 0) {
+          const existingDocs: Document[] = data.documents.map((doc: any) => ({
+            id: doc.id,
+            name: doc.name,
+            type: doc.type || "application/pdf",
+            status: doc.status || "ready",
+            chunkCount: doc.chunkCount || 0,
+          }));
+          setDocuments(existingDocs);
+        }
+      } catch (error) {
+        console.error("[Home] Error fetching existing documents:", error);
+      }
+    }
+    fetchExistingDocuments();
+  }, []);
+
+  const handleDocumentsChange = useCallback((docs: Document[]) => {
     setDocuments(docs);
-  };
+  }, []);
+
+  const handleRequestUpload = useCallback(() => {
+    setShowUpload(true);
+  }, []);
 
   return (
     <div className="app-container">
@@ -41,13 +68,15 @@ export default function Home() {
         <div className="document-section">
           <div className="section-header">
             <span className="section-title">
-              📚 Study Materials
+              📚 Study Materials {documents.filter(d => d.status === "ready").length > 0 && (
+                <span className="doc-count-inline">({documents.filter(d => d.status === "ready").length} loaded)</span>
+              )}
             </span>
             <button 
               className="toggle-upload-btn"
               onClick={() => setShowUpload(!showUpload)}
             >
-              {showUpload ? "Hide" : "Show"}
+              {showUpload ? "Hide" : "Upload Files"}
             </button>
           </div>
           
@@ -59,6 +88,7 @@ export default function Home() {
         <ChatPanel 
           activeMode={activeMode} 
           documents={documents}
+          onRequestUpload={handleRequestUpload}
         />
       </main>
     </div>

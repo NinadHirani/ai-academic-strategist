@@ -3,15 +3,18 @@
 
 import React, { useState, useRef, useEffect, useMemo } from "react";
 
+interface UploadedDocument {
+  id: string;
+  name: string;
+  type: string;
+  status: "ready" | "processing" | "error";
+  chunkCount?: number;
+}
+
 interface ChatPanelProps {
   activeMode: "study" | "deepExplore";
-  documents?: Array<{
-    id: string;
-    name: string;
-    type: string;
-    status: "ready" | "processing" | "error";
-    chunkCount?: number;
-  }>;
+  documents?: UploadedDocument[];
+  onRequestUpload?: () => void;
 }
 
 interface ChatSession {
@@ -21,11 +24,19 @@ interface ChatSession {
   updatedAt: string;
 }
 
+interface SourceInfo {
+  documentName: string;
+  chunkIndex: number;
+  score: number;
+}
+
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
   timestamp: Date;
+  sources?: SourceInfo[];
+  hasDocuments?: boolean;
 }
 
 interface Section {
@@ -228,7 +239,7 @@ const quickActions = [
   { label: "Summarize this", emoji: "📝" },
 ];
 
-export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps) {
+export default function ChatPanel({ activeMode, documents = [], onRequestUpload }: ChatPanelProps) {
   const content = modeContent[activeMode];
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -367,6 +378,7 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
         body: JSON.stringify({ 
           message: userMessage.content, 
           mode: activeMode,
+          useRag: true,
           sessionId: sessionId || undefined 
         }),
       });
@@ -384,11 +396,16 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
         fetchPastChats(); // Refresh past chats list when new session is created
       }
 
+      // Build sources list from retrieval metadata
+      const responseSources: SourceInfo[] = data.retrieval?.sources || [];
+
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         content: data.message,
         timestamp: new Date(),
+        sources: responseSources.length > 0 ? responseSources : undefined,
+        hasDocuments: data.hasDocuments,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -433,6 +450,14 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
           </div>
         </div>
         <div className="chat-actions">
+          {/* Document status badge */}
+          {documents.length > 0 && (
+            <div className="doc-status-badge" title={`${documents.filter(d => d.status === "ready").length} document(s) loaded for Q&A`}>
+              <span className="doc-badge-icon">📚</span>
+              <span className="doc-badge-count">{documents.filter(d => d.status === "ready").length}</span>
+              <span className="doc-badge-label">docs loaded</span>
+            </div>
+          )}
           <button 
             className="new-chat-btn"
             onClick={() => {
@@ -532,6 +557,25 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
                 ) : (
                   <MarkdownResponse content={message.content} />
                 )}
+                {/* Source Citations */}
+                {message.sources && message.sources.length > 0 && (
+                  <div className="source-citations">
+                    <div className="source-citations-header">
+                      <span className="source-icon">📎</span>
+                      <span>Sources ({message.sources.length})</span>
+                    </div>
+                    <div className="source-citations-list">
+                      {message.sources.map((source, idx) => (
+                        <div key={idx} className="source-citation-item">
+                          <span className="source-doc-icon">📄</span>
+                          <span className="source-doc-name">{source.documentName}</span>
+                          <span className="source-chunk-badge">Section {source.chunkIndex + 1}</span>
+                          <span className="source-score">{(source.score * 100).toFixed(0)}% match</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="message-time">{formatTime(message.timestamp)}</div>
               </div>
             </div>
@@ -556,10 +600,19 @@ export default function ChatPanel({ activeMode, documents = [] }: ChatPanelProps
 
       <div className="chat-input-container">
         <div className="chat-input-wrapper">
+          {/* Attach file button */}
+          <button
+            className="attach-btn"
+            onClick={() => onRequestUpload?.()}
+            title="Upload documents for Q&A"
+            type="button"
+          >
+            📎
+          </button>
           <input
             type="text"
             className="chat-input"
-            placeholder={content.placeholder}
+            placeholder={documents.length > 0 ? `Ask about your ${documents.filter(d => d.status === "ready").length} uploaded doc(s)...` : content.placeholder}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyPress}
