@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useCallback } from "react";
+import React, { useState, useRef, useCallback, useEffect } from "react";
 
 interface Document {
   id: string;
@@ -177,24 +177,13 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
     } catch (err) {
       console.error("[FileUpload] Parallel upload error:", err);
     }
-
     setIsUploading(false);
-
-    // Notify parent of document changes
-    setDocuments((prevDocs) => {
-      onDocumentsChange?.(prevDocs);
-      return prevDocs;
-    });
   };
 
   const handleDelete = async (docId: string) => {
     // Skip delete for temp documents
     if (docId.startsWith("temp-")) {
-      setDocuments((prev) => {
-        const filtered = prev.filter((doc) => doc.id !== docId);
-        onDocumentsChange?.(filtered);
-        return filtered;
-      });
+      setDocuments((prev) => prev.filter((doc) => doc.id !== docId));
       return;
     }
 
@@ -208,16 +197,41 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
         throw new Error(data.error || "Failed to delete document");
       }
 
-      setDocuments((prev) => {
-        const filtered = prev.filter((doc) => doc.id !== docId);
-        onDocumentsChange?.(filtered);
-        return filtered;
-      });
+      setDocuments((prev) => prev.filter((doc) => doc.id !== docId));
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Delete failed";
       setError(errorMessage);
     }
   };
+
+  const handleDeleteAll = async () => {
+    setError(null);
+    const currentDocs = documents;
+
+    // Optimistically clear UI
+    setDocuments([]);
+
+    // Delete persisted docs (skip temp entries)
+    try {
+      const deleteCalls = currentDocs
+        .filter((d) => !d.id.startsWith("temp-"))
+        .map((d) => fetch(`/api/documents?id=${encodeURIComponent(d.id)}`, { method: "DELETE" }));
+
+      if (deleteCalls.length) {
+        await Promise.allSettled(deleteCalls);
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : "Delete all failed";
+      setError(errorMessage);
+    }
+  };
+
+  // Notify parent when documents change (avoids setState during render of another component)
+  useEffect(() => {
+    if (onDocumentsChange) {
+      onDocumentsChange(documents);
+    }
+  }, [documents, onDocumentsChange]);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -322,6 +336,14 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
             <span className="document-count">
               {readyDocuments.length} document(s) ready for Q&A
             </span>
+            <button
+              className="document-delete-all"
+              onClick={handleDeleteAll}
+              title="Remove all uploaded documents"
+              disabled={isUploading}
+            >
+              Remove all
+            </button>
           </div>
 
           <div className="document-items">

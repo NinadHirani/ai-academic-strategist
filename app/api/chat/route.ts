@@ -33,6 +33,13 @@ interface RetrievalMetadata {
   retrievalTime?: number;
 }
 
+type UserProfile = {
+  name?: string;
+  university?: string;
+  interests?: string[];
+  weakAreas?: string[];
+};
+
 interface AcademicContextMetadata {
   university: string | null;
   semester: number | null;
@@ -71,62 +78,159 @@ const MAX_CHAT_HISTORY_MESSAGES = 30;
  * Human-like Writing Style Guidelines
  * These instructions help generate natural, conversational responses
  */
+// === STRICT ACADEMIC EXPLANATION SYSTEM ===
+
 const SYSTEM_RESPONSE_GOVERNANCE = `
-SYSTEM RESPONSE GOVERNANCE
+You are an academic explanation engine. Your output must strictly follow these rules:
 
-You are an analytical knowledge assistant. Your responses must follow strict structural, logical, and clarity rules.
+GLOBAL RULES
+- Never generate or fabricate URLs.
+- Never mention external links unless explicitly provided.
+- Do not invent references.
+- Assume references and videos will be attached separately by the system.
+- Focus only on explanation and structured academic clarity.
+- Maintain professional academic tone when the user asks a technical or subject-focused question.
+- Do not introduce yourself as a tutor.
+- Do not ask follow-up questions at the end unless clarification is required.
 
-GLOBAL BEHAVIOUR RULES
-- Prioritize clarity, precision, and organization.
-- Avoid filler, storytelling, or generic tutoring language.
-- Do not produce unstructured paragraphs.
-- Every response must have visible structure.
-- Depth over verbosity. Be information-dense.
+GENERAL CONVERSATION GUIDELINES
+- When the user asks about how to use the system, about uploaded documents, or anything that is not a formal academic/technical query, switch to a simple, friendly conversational tone.
+- Respond as you would to a normal person or curious friend: clear, direct, and warm.
+- Avoid rigid academic formatting in casual interactions; keep sentences natural and easy to read.
+- You may paraphrase system usage instructions or document policies in plain language.
 
-STRUCTURE RULES
-- Segment explanations into labeled sections.
-- Use headers for major conceptual divisions.
-- Use bullet points for mechanisms, properties, and factors.
-- Use numbered steps for sequences or procedures.
-- Use Markdown tables ONLY when comparing concepts.
-- Use Mermaid diagrams ONLY when visualizing processes/systems.
-- Maintain formatting consistency.
+GROUNDING RULE
+You are given:
+- Topic
+- Mode (Study or DeepExplore)
+- Student Level (optional)
+- Syllabus context (optional)
+- Search summaries (trusted external snippets)
 
-DEFAULT EXPLANATION TEMPLATE (unless specified otherwise)
+You must base your explanation on:
+1. Your internal knowledge
+2. The provided syllabus context
+3. The provided search summaries
 
-[Concept / Topic Name]
+If information is limited:
+Make logical academic assumptions and continue clearly.
 
-1. Core Definition  
-2. Key Idea / Intuition  
-3. Mechanism / How It Works  
-4. Key Characteristics / Properties  
-5. Variations / Types (if applicable)  
-6. Practical Applications  
-7. Limitations / Trade-offs (if relevant)  
-8. Common Misconceptions  
+Never say:
+“I cannot access external documents.”
+“I cannot browse the internet.”
 
-COMPARATIVE MODE (Trigger Condition)
-If multiple concepts are compared:
-→ MUST use a Markdown table.
+MODE-SPECIFIC OUTPUT STRUCTURE
 
-PROCESS VISUALIZATION MODE (Trigger Condition)
-If explaining flows, cycles, hierarchies, interactions:
-→ MUST include a Mermaid diagram.
+If Mode = Study
 
-QUALITY CONTROL RULES
-- No vague statements.
-- No redundant summaries.
-- No recap sections unless explicitly requested.
-- Maintain conceptual consistency.
-- Avoid misleading oversimplification.
+Goal: Make the explanation engaging, visually clear, and easy to scan.
 
-TONE
-- Calm, intelligent, direct.
-- Professional and readable.
+Do NOT use rigid academic section headers.
 
-FAILSAFE
-If instructions conflict:
-→ Prioritize structural clarity and logical accuracy.
+Write in a natural explanatory style, but format clearly using:
+
+- Short paragraphs (2–4 lines max)
+- Bold for important terms
+- Small informal headings when helpful
+- Bullet points for lists
+- Numbered steps for processes
+- Colon-style mini sections (e.g., "Why this matters:")
+- Tables when comparison improves clarity
+- Clean math equations when relevant
+- Light, meaningful emoji use (sparingly)
+
+Structure the explanation naturally in this flow:
+
+• Start by building intuition about the concept.
+• Introduce core ideas gradually.
+• Break down how it works (use steps if needed).
+• Provide at least one concrete example.
+• Highlight common mistakes (⚠️).
+• End with a short exam-focused takeaway.
+
+Formatting Guidelines:
+
+- Use bullets only when clarity improves.
+- Use numbered lists for logical sequences.
+- Use tables for structured comparison.
+- Keep spacing between sections.
+- Avoid long unbroken paragraphs.
+- Avoid turning explanation into a narrative story.
+- Avoid excessive emoji use.
+- Avoid sounding like a textbook.
+
+The explanation should feel like a smart senior explaining on a board — visually clean, logically structured, and easy to absorb.
+
+If Mode = DeepExplore
+Goal: Theoretical depth and academic rigor.
+Structure output EXACTLY as:
+
+Concept Overview
+High-level introduction.
+
+Formal Definition
+Precise and technical definition.
+
+Core Theoretical Framework
+Mathematical or logical structure.
+
+Related Concepts
+Connections to adjacent topics.
+
+Advanced Insight
+Deeper reasoning, edge cases, or system-level implications.
+
+Practical / System Applications
+Real-world or research applications.
+
+Avoid simplification unless Student_Level requires it.
+
+PERSONALIZATION LAYER
+If Student_Level is provided:
+Beginner:
+- Simple vocabulary
+- Clear step transitions
+- Avoid heavy notation
+Intermediate:
+- Balanced clarity and technical depth
+Advanced:
+- Formal terminology
+- Mathematical notation where relevant
+- Academic rigor
+Never intentionally degrade explanation quality.
+Adapt clarity, not correctness.
+
+OUTPUT RULES
+- Use clean section headers.
+- Use short, readable paragraphs.
+- Use bullet points only when helpful.
+- Avoid unnecessary emojis.
+- Avoid filler language.
+- No conversational fluff.
+- No tutor-style endings like:
+“What would you like to learn next?”
+The output must feel like a structured academic article, not a chat reply.
+
+BACKEND SELF-CHECK (internal, not shown to user):
+Before finalizing response:
+- Verify no URLs are present.
+- Verify required section headers exist.
+- Verify structure matches selected Mode.
+Then output final answer.
+
+ARCHITECTURE LOGIC SUMMARY
+LLM handles:
+- Explanation
+- Structure
+- Academic reasoning
+Search API handles:
+- Real URLs
+- Video links
+- Reference credibility
+Frontend handles:
+- Collapsible “Sources” button
+- Clean UI display
+Never merge responsibilities.
 `;
 const HUMAN_WRITING_GUIDELINES = `WRITING STYLE:
 - Write the way a knowledgeable, friendly human would explain things
@@ -136,7 +240,9 @@ const HUMAN_WRITING_GUIDELINES = `WRITING STYLE:
 - Avoid robotic transitions like "Furthermore", "Moreover", "Additionally", "In conclusion"
 - Use natural connectors like "Actually", "So", "The thing is", "Here's the deal"
 - Don't over-explain or state the obvious
-- Sound like a knowledgeable tutor, not a textbook`;
+- Sound like a knowledgeable tutor, not a textbook
+
+*When the question is about using the system, uploaded files, or is otherwise informal, lean into normal conversational tone (think chat with a friend) and drop academic formality.*`;
 
 const OUTPUT_FORMATTING = `FORMATTING:
 - Use light formatting - <strong> for key terms, concepts students should remember
@@ -206,7 +312,9 @@ const RESPONSE_TONE = `TONE:
 - Show genuine interest in helping - but naturally, not performatively
 - Match the student's energy - casual questions get casual answers, serious ones get serious treatment
 - If the student asks something simple, don't be condescending
-- Sometimes a direct short answer is better than a long explanation`;
+- Sometimes a direct short answer is better than a long explanation
+
+*For purely operational or document‑related queries, keep the tone even more relaxed and human‑like; imagine you're just chatting with someone over coffee.*`
 
 // ============================================================================
 // Study Tutor Constraints - Output Formatting Rules
@@ -317,107 +425,82 @@ Response Style:
 - Use the user's name periodically to maintain rapport.
 - If the user is a student or professional, tailor technical explanations to their known skill level.`;
 
+// Remove conversational/tutor tone for strict academic output
 const MODE_TONE_INSTRUCTIONS: Record<string, string> = {
-  study: "Break concepts into digestible pieces. Use relatable examples. Check understanding as you go - ask 'does that make sense?' or 'got it?'",
-  deepExplore: "Go deep but keep it flowing. Connect ideas naturally. Build on previous understanding. Show how things relate in the real world.",
-  tutor: "Guide through questions - lead them to the answer rather than giving it. Use Socratic method naturally. Say 'what if we thought about it this way...'",
-  review: "Be concise and action-oriented. Focus on what matters for exams. Give quick summaries, key formulas, common pitfalls. Quiz them at the end."
+  study: "Strictly follow the Study mode output structure: Concept Overview, Key Principles, Step-by-Step Explanation, Example, Common Mistakes, Exam Relevance. Maintain academic tone when answering technical/subject questions, but feel free to be casual if the user is asking about system usage or general queries.",
+  deepExplore: "Strictly follow the DeepExplore mode output structure: Concept Overview, Formal Definition, Core Theoretical Framework, Related Concepts, Advanced Insight, Practical / System Applications. Maintain academic rigor, unless the request is clearly a general or operational question — in that case, relax into a friendly conversational tone.",
+  tutor: "(Not used)",
+  review: "(Not used)"
 };
 
 // ============================================================================
-// Base System Prompt
-// ============================================================================
+// ...existing code...
+// System-level assistant prompt for operational/conversational responses
+const SYSTEM_META_MODE = "";
 
-const BASE_SYSTEM_PROMPT = `You are an expert Study Tutor. Your goal is to help students visualize and organize information.
-
-You explain things clearly and naturally - the way a skilled teacher would in a one-on-one tutoring session. You're patient but don't over-explain. You use examples from real life when they make things clearer.
-
-Your goal is to help students truly understand, not just memorize. When they struggle, you try different approaches. When they get it, you reinforce the understanding.
-
-${HUMAN_WRITING_GUIDELINES}
-
-${OUTPUT_FORMATTING}
-
-${AI_PATTERNS_TO_AVOID}
-
-${RESPONSE_TONE}
-
-${COMPARATIVE_LEARNING}
-
-${PROCESS_VISUALIZATION}
-
-${MATHEMATICAL_PRECISION}
-
-${SCANNABILITY}
-
-${CHECK_FOR_UNDERSTANDING}`;
+const BASE_SYSTEM_PROMPT = SYSTEM_RESPONSE_GOVERNANCE;
 
 const MODE_INSTRUCTIONS: Record<string, string> = {
-  study: "Break concepts into digestible pieces. Use relatable examples. Check understanding as you go.",
-  deepExplore: "Go deep but keep it flowing. Connect ideas naturally. Build on previous understanding.",
-  tutor: "Guide through questions - lead them to the answer rather than giving it outright. Use Socratic method.",
-  review: "Be concise and action-oriented. Focus on what matters for exams. Give quick summaries."
+  study: "Mode: Study. Output structure: Concept Overview, Key Principles, Step-by-Step Explanation, Example, Common Mistakes, Exam Relevance. Strictly follow this structure.",
+  deepExplore: "Mode: DeepExplore. Output structure: Concept Overview, Formal Definition, Core Theoretical Framework, Related Concepts, Advanced Insight, Practical / System Applications. Strictly follow this structure."
 };
-
-const RAG_CONTEXT_TEMPLATE = `Reference Material:\n{sources}\n\n{context}`;
-const IMPROVED_CONTEXT_INSTRUCTION = "Use the reference material to inform your answer.";
-const NO_CONTEXT_INSTRUCTION = "No specific documents available. Use your general knowledge to help. IMPORTANT: If you cannot find relevant information in the reference material, do not make up an answer. Instead, respond with: 'I couldn't find relevant information in your uploaded materials to answer this question. Would you like me to explain based on general knowledge, or do you have other documents I should consider?'";
 
 function buildSystemPrompt(
   mode: string,
   retrievedContext: string | null,
   sources: Source[],
+  userProfile: UserProfile | null,
   academicContext: AcademicContext | null,
-  conversationLength: number,
-  userProfile?: { name?: string; university?: string; interests?: string[]; weakAreas?: string[] }
-): string {
-  const promptParts = [
-    BASE_SYSTEM_PROMPT,
-    "",
-    LONG_TERM_MEMORY_PROTOCOL,
-    "",
-    "---",
-    "",
-    // User Profile Section
-    userProfile ? `[USER_PROFILE]
-${userProfile.name ? `- Name: ${userProfile.name}` : '- Name: Not provided'}
-${userProfile.university ? `- University/Education: ${userProfile.university}` : '- University: Not provided'}
-${userProfile.interests?.length ? `- Interests: ${userProfile.interests.join(', ')}` : '- Interests: Not provided'}
-${userProfile.weakAreas?.length ? `- Areas to Improve: ${userProfile.weakAreas.join(', ')}` : ''}` : '[USER_PROFILE]\n- No profile data available yet. Ask friendly questions to learn about the user!',
-    "",
-    "---",
-    "",
-    MODE_INSTRUCTIONS[mode] || MODE_INSTRUCTIONS.study,
-    "",
-  ];
-
-  if (conversationLength > 0) {
-    promptParts.push(`This is message ${conversationLength + 1} in our conversation.`);
-  }
-
-  if (academicContext && academicContext.confidence >= 0.4) {
-    const contextString = getContextForPrompt(academicContext);
-    if (contextString) {
-      promptParts.push("", `Academic Context: ${contextString}`);
+  syllabusContext: string | null,
+  contextString: string | null
+) {
+  if (contextString) syllabusContext = contextString;
+  let searchSummaries = "";
+  if (retrievedContext && retrievedContext.trim().length > 0) {
+    // Include actual document content retrieved via RAG
+    searchSummaries = `The following content was retrieved from uploaded documents:\n\n${retrievedContext}`;
+    if (sources.length > 0) {
+      searchSummaries += `\n\nSources: ${sources.map((s, i) => `${i + 1}. ${s.documentName} (Section ${s.chunkIndex + 1}, ${(s.score * 100).toFixed(0)}% match)`).join(", ")}`;
     }
   }
 
-  if (retrievedContext && sources.length > 0) {
-    const sourceList = sources.map((s, i) => 
-      `${i + 1}. ${s.documentName}${s.chunkIndex !== undefined ? ` (Section ${s.chunkIndex + 1})` : ''}`
-    ).join('\n');
-    
-    const contextSection = RAG_CONTEXT_TEMPLATE
-      .replace("{sources}", sourceList)
-      .replace("{context}", retrievedContext);
-    
-    promptParts.push("", contextSection);
-    promptParts.push("", IMPROVED_CONTEXT_INSTRUCTION);
-  } else {
-    promptParts.push("", NO_CONTEXT_INSTRUCTION);
+  // Compose the explicit backend user prompt
+  let userProfileSection = "";
+  if (userProfile && userProfile.name) {
+    userProfileSection = `\nUser Profile:\n- Name: ${userProfile.name}\n- University: ${userProfile.university || "Not specified"}\n- Interests: ${(userProfile.interests && userProfile.interests.length > 0) ? userProfile.interests.join(", ") : "Not specified"}\n- Weak Areas: ${(userProfile.weakAreas && userProfile.weakAreas.length > 0) ? userProfile.weakAreas.join(", ") : "None identified"}`;
   }
 
-  return promptParts.join("\n");
+  const backendPrompt = [
+    BASE_SYSTEM_PROMPT,
+    "",
+    HUMAN_WRITING_GUIDELINES,
+    "",
+    OUTPUT_FORMATTING,
+    "",
+    MATHEMATICAL_PRECISION,
+    "",
+    MODE_TONE_INSTRUCTIONS[mode] || MODE_TONE_INSTRUCTIONS["study"],
+    "",
+    "---",
+    "",
+    `Mode: ${mode === "deepExplore" ? "DeepExplore" : "Study"}`,
+    `Student_Level: Intermediate`,
+    `Topic: ${(academicContext && academicContext.intent) ? academicContext.intent : "(Not specified)"}`,
+    `Subject: ${(academicContext && academicContext.subject) ? academicContext.subject : "(Not specified)"}`,
+    `University: ${(academicContext && academicContext.university) ? academicContext.university : (userProfile && userProfile.university ? userProfile.university : "(Not specified)")}`,
+    userProfileSection,
+    "Syllabus Context:",
+    syllabusContext ? syllabusContext : "(None provided)",
+    "",
+    "Search Summaries / Reference Material:",
+    searchSummaries ? searchSummaries : "(None provided)",
+    "",
+    "IMPORTANT: If reference material is provided above, use it as your primary source. Base your answer on those materials.",
+    "If no reference material is provided, use your general knowledge to give a thorough answer.",
+    "",
+    "Generate explanation following system rules."
+  ].join("\n");
+  return backendPrompt;
 }
 
 function validateRequest(body: unknown): ChatRequestBody | null {
@@ -482,6 +565,14 @@ function contextToMetadata(context: AcademicContext): AcademicContextMetadata {
 export async function POST(request: NextRequest): Promise<NextResponse<ChatResponse | { error: string }>> {
   const startTime = Date.now();
 
+  // === DEBUG: API Key Configuration ===
+  console.log("=== DEBUGGING CHAT ROUTE ===");
+  console.log("[DEBUG] Environment API Keys:");
+  console.log("- GROQ_API_KEY:", process.env.GROQ_API_KEY ? "✓ Set" : "❌ Missing");
+  console.log("- OPENAI_API_KEY:", process.env.OPENAI_API_KEY ? "✓ Set" : "❌ Missing");
+  console.log("- SUPABASE_URL:", process.env.NEXT_PUBLIC_SUPABASE_URL ? "✓ Set" : "❌ Missing");
+  console.log("- SUPABASE_ANON_KEY:", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "✓ Set" : "❌ Missing");
+
   try {
     let body: unknown;
     try {
@@ -498,18 +589,20 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     const { message, mode, useRag, userId: rawUserId, sessionId } = validatedBody;
     const userId = rawUserId || DEFAULT_USER_ID;
 
+    console.log(`[DEBUG] Request: useRag=${useRag}, message="${message.substring(0, 50)}..."`);    
+
     let currentSessionId = sessionId || undefined;
     let conversationLength = 0;
     
+    // Step 1: Get or create session (do NOT save user message yet — we fetch history first)
     try {
-      const session = await getOrCreateSession(userId, currentSessionId);
+      const session = await getOrCreateSession(userId, currentSessionId, mode as ChatMode);
       currentSessionId = session.id;
-      await addMessage(session.id, "user", message);
       
       const messageCount = await getSessionMessageCount(session.id);
       conversationLength = messageCount;
       
-      if (messageCount <= 2) {
+      if (messageCount <= 0) {
         const title = await generateSessionTitle(message);
         await updateSession(session.id, { title, mode: mode as ChatMode });
       }
@@ -524,10 +617,30 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       return NextResponse.json({ error: "API key not configured" }, { status: 500 });
     }
 
-    // Get documents from Supabase directly (bypasses memory cache issue in serverless)
+    // === DEBUG: API Configuration ===
+    console.log("[DEBUG] Selected API Configuration:");
+    console.log("- Provider:", config.apiKey === process.env.GROQ_API_KEY ? "GROQ" : "OpenAI");
+    console.log("- Base URL:", config.baseUrl);
+    console.log("- Chat Model:", config.model);
+    console.log("- Embedding Model:", config.embeddingModel);
+
+    // === DEBUG: Supabase Document Check ===
+    console.log("[DEBUG] Checking Supabase Documents...");
     const documents = await getDocumentsFromSupabase();
     const hasDocuments = documents.length > 0;
     const vectorStoreStats = getStats();
+
+    console.log(`[DEBUG] Document Results:`);
+    console.log(`- Documents in Supabase: ${documents.length}`);
+    console.log(`- Has Documents: ${hasDocuments}`);
+    console.log(`- Vector Store Stats:`, vectorStoreStats);
+    
+    if (documents.length > 0) {
+      console.log("[DEBUG] Document Names:", documents.slice(0, 5).map(d => d.name || d.title || 'Unnamed'));
+      if (documents.length > 5) console.log(`... and ${documents.length - 5} more documents`);
+    } else {
+      console.log("⚠️ [DEBUG] NO DOCUMENTS FOUND in Supabase!");
+    }
 
     console.log(`[Chat] RAG mode: ${useRag}, hasDocuments: ${hasDocuments}, docs:`, documents.length, 'stats:', vectorStoreStats);
 
@@ -538,17 +651,38 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     // Always attempt RAG retrieval when useRag is true
     // The vector store will fetch from Supabase if configured
     if (useRag) {
+      console.log("[DEBUG] === RAG RETRIEVAL PROCESS ===");
       try {
-        const queryEmbedding = await generateEmbedding(message, {
+        // === DEBUG: Embedding Generation ===
+        console.log("[DEBUG] Generating embedding for query...");
+        const embeddingConfig = {
           apiKey: config.embeddingApiKey || config.apiKey,
           baseUrl: config.embeddingBaseUrl,
           model: config.embeddingModel,
-        });
+        };
+        console.log("[DEBUG] Embedding Config:", embeddingConfig);
 
+        const queryEmbedding = await generateEmbedding(message, embeddingConfig);
+        console.log("[DEBUG] ✓ Embedding generated successfully, length:", queryEmbedding?.length || 'unknown');
+        
+        // === DEBUG: Context Retrieval ===
+        console.log("[DEBUG] Retrieving context with config:", DEFAULT_RAG_CONFIG);
         const retrievalResult = await retrieveContext(message, queryEmbedding, config.embeddingApiKey || config.apiKey, DEFAULT_RAG_CONFIG);
         
         retrievedContext = retrievalResult.context || null;
         sources = retrievalResult.sources;
+
+        // === DEBUG: Retrieval Results ===
+        console.log("[DEBUG] Retrieval Results:");
+        console.log("- Retrieved Context Length:", retrievedContext?.length || 0);
+        console.log("- Sources Found:", sources.length);
+        console.log("- Sources:", sources.map(s => `${s.documentName} (${(s.score * 100).toFixed(1)}%)`));
+        
+        if (retrievedContext) {
+          console.log("- Context Preview:", retrievedContext.substring(0, 200) + "...");
+        } else {
+          console.log("❌ [DEBUG] NO CONTEXT RETRIEVED!");
+        }
 
         retrievalMetadata = {
           retrieved: sources.length > 0,
@@ -560,9 +694,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         console.log(`[Chat] RAG retrieval: ${sources.length} sources found`);
         if (sources.length > 0) {
           console.log(`[Chat] Sources:`, sources.map(s => s.documentName).join(', '));
+        } else {
+          console.log("⚠️ [Chat] NO SOURCES FOUND during retrieval!");
         }
       } catch (ragError) {
-        console.error("[Chat] RAG error:", ragError);
+        console.error("❌ [DEBUG] RAG ERROR:", ragError);
+        console.error("- Error message:", ragError instanceof Error ? ragError.message : 'Unknown error');
+        console.error("- Error stack:", ragError instanceof Error ? ragError.stack : 'No stack trace');
+        
         retrievalMetadata = {
           retrieved: false,
           sourceCount: 0,
@@ -570,45 +709,76 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
           retrievalTime: Date.now() - startTime,
         };
       }
+    } else {
+      console.log("[DEBUG] RAG disabled (useRag=false)");
     }
 
     // Fetch user profile for Long-Term Memory (from JSON file + Supabase)
-    let userProfile: { name?: string; university?: string; interests?: string[]; weakAreas?: string[] } | undefined;
+    let userProfile: UserProfile | null = null;
     let jsonProfile = null;
     try {
+      console.log("[DEBUG] === USER PROFILE LOADING ===");
       // Load from JSON file (persistent memory)
       jsonProfile = getUserProfile(userId);
+      console.log("[DEBUG] JSON Profile:", jsonProfile ? "✓ Found" : "❌ Not found");
       
       // Also get from Supabase for additional data
       const profile = await getStudentProfile(userId);
       const weakAreas = await getWeakAreas(userId);
       const strongAreas = await getStrongAreas(userId);
       
+      console.log("[DEBUG] Supabase Profile:", profile ? "✓ Found" : "❌ Not found");
+      console.log("[DEBUG] Weak Areas:", weakAreas ? `✓ Found (${weakAreas.length})` : "❌ Not found");
+      console.log("[DEBUG] Strong Areas:", strongAreas ? `✓ Found (${strongAreas.length})` : "❌ Not found");
+      
       // Merge JSON profile with Supabase profile (JSON takes priority for name/university)
       userProfile = {
         name: jsonProfile?.name || (profile as any)?.name,
-        university: jsonProfile?.university || (profile as any)?.university || academicContext?.university,
-        interests: jsonProfile?.interests || (profile as any)?.learningPatterns?.difficultConcepts || [],
-        weakAreas: weakAreas || [],
+        university: jsonProfile?.university || (profile as any)?.university || academicContext?.university || undefined,
+        interests: jsonProfile?.interests || (profile as any)?.learningPatterns?.difficultConcepts || undefined,
+        weakAreas: weakAreas || undefined,
       };
+      
+      console.log("[DEBUG] Final User Profile:", JSON.stringify(userProfile));
     } catch (e) {
-      console.error("[Chat] Profile error:", e);
+      console.error("❌ [DEBUG] Profile error:", e);
     }
 
-    const systemPrompt = buildSystemPrompt(mode, retrievedContext, sources, academicContext, conversationLength, userProfile);
+    const systemPrompt = buildSystemPrompt(
+      mode,
+      retrievedContext,
+      sources,
+      userProfile,
+      academicContext,
+      null,
+      null
+    );
     
     console.log('[Chat] Building prompt with userProfile:', JSON.stringify(userProfile));
 
+    // Step 2: Fetch conversation history BEFORE saving the new user message
+    // This prevents the current message from appearing twice
     let conversationHistory: Message[] = [];
     if (currentSessionId) {
       try {
         const historyMessages = await getConversationContext(currentSessionId, MAX_CHAT_HISTORY_MESSAGES);
-        conversationHistory = historyMessages.map(msg => ({
-          role: msg.role as "user" | "assistant" | "system",
-          content: msg.content,
-        }));
+        conversationHistory = historyMessages
+          .filter(msg => msg.role !== 'system') // exclude system messages from history
+          .map(msg => ({
+            role: msg.role as "user" | "assistant" | "system",
+            content: msg.content,
+          }));
       } catch (e) {
         console.error("[Chat] History error:", e);
+      }
+    }
+
+    // Step 3: NOW save the user message to DB (after fetching history)
+    if (currentSessionId) {
+      try {
+        await addMessage(currentSessionId, "user", message);
+      } catch (e) {
+        console.error("[Chat] Save user message error:", e);
       }
     }
 
@@ -617,6 +787,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       ...conversationHistory,
       { role: "user", content: message },
     ];
+
+    // === DEBUG: Final Request ===
+    console.log("[DEBUG] === CHAT COMPLETION REQUEST ===");
+    console.log("- System prompt length:", systemPrompt.length);
+    console.log("- Conversation history length:", conversationHistory.length);
+    console.log("- Total messages:", messages.length);
+    console.log("- Has retrieved context:", !!retrievedContext);
+    console.log("- Retrieved context in prompt:", systemPrompt.includes("The following content was retrieved"));
 
     const chatResponse = await fetch(`${config.baseUrl}/chat/completions`, {
       method: "POST",
@@ -638,7 +816,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     if (!chatResponse.ok) {
       const errorData = await chatResponse.json().catch(() => ({}));
       const errorMsg = errorData.error?.message || "AI request failed";
-      console.error("[Chat] API Error:", errorMsg);
+      console.error("❌ [DEBUG] Chat API Error:", errorMsg);
+      console.error("- Status:", chatResponse.status);
+      console.error("- Response:", errorData);
       return NextResponse.json({ error: errorMsg }, { status: chatResponse.status });
     }
 
@@ -647,6 +827,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       "I couldn't generate a response. Please try again.";
 
     assistantMessage = assistantMessage.trim();
+
+    // === DEBUG: Response Results ===
+    console.log("[DEBUG] === FINAL RESULTS ===");
+    console.log("- Assistant message length:", assistantMessage.length);
+    console.log("- Has documents:", hasDocuments);
+    console.log("- Sources retrieved:", sources.length);
+    console.log("- Total processing time:", Date.now() - startTime, "ms");
 
     if (currentSessionId) {
       try {
@@ -678,6 +865,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
 
     const totalTime = Date.now() - startTime;
 
+    console.log("[DEBUG] === RESPONSE SUMMARY ===");
+    console.log("✓ Chat completed successfully");
+    console.log("- Mode:", mode);
+    console.log("- RAG enabled:", useRag);
+    console.log("- Documents available:", hasDocuments);
+    console.log("- Context retrieved:", !!retrievedContext);
+    console.log("- Sources found:", sources.length);
+    console.log("- Processing time:", totalTime, "ms");
+    console.log("=====================================");
+
     return NextResponse.json({
       message: assistantMessage,
       mode,
@@ -688,7 +885,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     });
 
   } catch (error) {
-    console.error("[Chat] Error:", error);
+    console.error("❌ [DEBUG] CRITICAL ERROR:", error);
+    console.error("- Error type:", error instanceof Error ? error.constructor.name : typeof error);
+    console.error("- Error message:", error instanceof Error ? error.message : 'Unknown error');
+    console.error("- Error stack:", error instanceof Error ? error.stack : 'No stack trace');
+    
     return NextResponse.json(
       { error: "An unexpected error occurred. Please try again." },
       { status: 500 }

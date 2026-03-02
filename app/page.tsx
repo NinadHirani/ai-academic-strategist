@@ -46,6 +46,27 @@ export default function Home() {
     setDocuments(docs);
   }, []);
 
+  const handleClearDocuments = useCallback(async () => {
+    // Clear local state first
+    setDocuments([]);
+
+    // Attempt to delete all documents server-side to avoid long-term storage
+    try {
+      const resp = await fetch("/api/documents");
+      const data = await resp.json();
+
+      if (data?.documents?.length) {
+        await Promise.all(
+          data.documents.map((doc: any) =>
+            fetch(`/api/documents?id=${encodeURIComponent(doc.id)}`, { method: "DELETE" })
+          )
+        );
+      }
+    } catch (error) {
+      console.error("[Home] Error clearing documents:", error);
+    }
+  }, []);
+
   const handleRequestUpload = useCallback(() => {
     setShowUpload(true);
   }, []);
@@ -89,6 +110,7 @@ export default function Home() {
           activeMode={activeMode} 
           documents={documents}
           onRequestUpload={handleRequestUpload}
+          onClearDocuments={handleClearDocuments}
         />
       </main>
     </div>

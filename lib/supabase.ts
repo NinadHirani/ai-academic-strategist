@@ -21,13 +21,23 @@ export function getSupabaseClient(): SupabaseClient | null {
 }
 
 // Export as a lazy property to avoid initialization errors
+// Bind methods properly to avoid losing `this` context
 export const supabase = new Proxy({} as SupabaseClient, {
   get(_, prop) {
     const client = getSupabaseClient();
     if (!client) {
-      return () => {}; // Return no-op function for any property access
+      // Return a function that logs the issue and returns a failed-like object
+      console.warn(`[Supabase] Attempted to access '${String(prop)}' but client is not initialized`);
+      return typeof prop === 'string' ? (() => {
+        return { data: null, error: { message: 'Supabase client not initialized', code: 'NOT_INIT' } };
+      }) : undefined;
     }
-    return (client as any)[prop];
+    const value = (client as any)[prop];
+    // Bind functions to the client to preserve `this` context
+    if (typeof value === 'function') {
+      return value.bind(client);
+    }
+    return value;
   }
 });
 

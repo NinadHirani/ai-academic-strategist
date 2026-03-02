@@ -15,11 +15,8 @@ interface ChatPanelProps {
   activeMode: "study" | "deepExplore";
   documents?: UploadedDocument[];
   onRequestUpload?: () => void;
-}
-
-interface ChatSession {
-  id: string;
-  title: string;
+  onClearDocuments?: () => void | Promise<void>;
+  onDocumentsChange?: (docs: UploadedDocument[]) => void;
   mode: string;
   updatedAt: string;
 }
@@ -239,7 +236,7 @@ const quickActions = [
   { label: "Summarize this", emoji: "📝" },
 ];
 
-export default function ChatPanel({ activeMode, documents = [], onRequestUpload }: ChatPanelProps) {
+export default function ChatPanel({ activeMode, documents = [], onRequestUpload, onClearDocuments, onDocumentsChange }: ChatPanelProps) {
   const content = modeContent[activeMode];
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -255,6 +252,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload 
   const [pastChats, setPastChats] = useState<ChatSession[]>([]);
   const [showPastChats, setShowPastChats] = useState(false);
   const [showAllChats, setShowAllChats] = useState(false);
+  const [showDocList, setShowDocList] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch past chats on mount
@@ -276,6 +274,9 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload 
 
   // Handle selecting a past chat session
   const handleSessionSelect = async (selectedSessionId: string) => {
+    // Clear uploaded documents when switching to a past chat
+    if (onClearDocuments) await onClearDocuments();
+
     setSessionId(selectedSessionId);
     setShowPastChats(false);
     
@@ -452,7 +453,11 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload 
         <div className="chat-actions">
           {/* Document status badge */}
           {documents.length > 0 && (
-            <div className="doc-status-badge" title={`${documents.filter(d => d.status === "ready").length} document(s) loaded for Q&A`}>
+            <div
+              className="doc-status-badge"
+              title={`${documents.filter(d => d.status === "ready").length} document(s) loaded for Q&A`}
+              onClick={() => setShowDocList(!showDocList)}
+            >
               <span className="doc-badge-icon">📚</span>
               <span className="doc-badge-count">{documents.filter(d => d.status === "ready").length}</span>
               <span className="doc-badge-label">docs loaded</span>
@@ -460,7 +465,8 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload 
           )}
           <button 
             className="new-chat-btn"
-            onClick={() => {
+              onClick={async () => {
+                if (onClearDocuments) await onClearDocuments();
               setMessages([
                 {
                   id: "welcome",
@@ -524,6 +530,43 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload 
         </div>
       </div>
 
+      {showDocList && (
+        <div className="doc-list-panel-overlay" onClick={() => setShowDocList(false)} />
+      )}
+      {showDocList && (
+        <div className="doc-list-panel">
+          <h4>Your uploaded documents</h4>
+          {documents.length === 0 ? (
+            <p>No files uploaded.</p>
+          ) : (
+            <ul>
+              {documents.map((doc) => (
+                <li key={doc.id} className="doc-list-item">
+                  <span>{doc.name}</span>
+                  <button
+                    className="doc-list-delete"
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      try {
+                        const resp = await fetch(`/api/documents?id=${encodeURIComponent(doc.id)}`, { method: 'DELETE' });
+                        if (resp.ok) {
+                          const updated = documents.filter(d=>d.id!==doc.id);
+                          onDocumentsChange?.(updated);
+                        }
+                      } catch(err) {
+                        console.error('delete doc', err);
+                      }
+                    }}
+                  >
+                    🗑️
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button onClick={() => setShowDocList(false)} className="close-doc-list">Close</button>
+        </div>
+      )}
       <div className="chat-messages">
         {isWelcomeMessage ? (
           <div className="welcome-message">
@@ -558,24 +601,47 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload 
                   <MarkdownResponse content={message.content} />
                 )}
                 {/* Source Citations */}
-                {message.sources && message.sources.length > 0 && (
-                  <div className="source-citations">
-                    <div className="source-citations-header">
-                      <span className="source-icon">📎</span>
-                      <span>Sources ({message.sources.length})</span>
+                {message.sources && message.sources.length > 0 && (() => {
+                  // group by documentName
+                  const groups: Record<string, Array<{chunkIndex:number;score:number}>> = {};
+                  message.sources.forEach(s => {
+                    const name = s.documentName.replace(/\s+\(\d+\)/g, '') // remove trailing (1) etc
+                                         .replace(/\(SPECIAL\)/i,'')
+                                         .trim();
+                    if (!groups[name]) groups[name] = [];
+                    // avoid duplicates
+                    if (!groups[name].some(c => c.chunkIndex === s.chunkIndex)) {
+                      groups[name].push({chunkIndex: s.chunkIndex, score: s.score});
+                    }
+                  });
+                  const docNames = Object.keys(groups);
+                  return (
+                    <div className="source-citations">
+                      <div className="source-citations-header">
+                        <span className="source-icon">📎</span>
+                        <span>Sources ({docNames.length})</span>
+                      </div>
+                      <div className="source-citations-list">
+                        {docNames.map((doc, di) => (
+                          <div key={di} className="source-citation-group">
+                            <div className="source-citation-title">
+                              <span className="source-doc-icon">📄</span>
+                              <span className="source-doc-name">{doc}</span>
+                            </div>
+                            <div className="source-citation-items">
+                              {groups[doc].map((item, idx2) => (
+                                <div key={idx2} className="source-citation-item">
+                                  <span className="source-chunk-badge">Section {item.chunkIndex + 1}</span>
+                                  <span className="source-score">{(item.score * 100).toFixed(0)}% match</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="source-citations-list">
-                      {message.sources.map((source, idx) => (
-                        <div key={idx} className="source-citation-item">
-                          <span className="source-doc-icon">📄</span>
-                          <span className="source-doc-name">{source.documentName}</span>
-                          <span className="source-chunk-badge">Section {source.chunkIndex + 1}</span>
-                          <span className="source-score">{(source.score * 100).toFixed(0)}% match</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                  );
+                })()}
                 <div className="message-time">{formatTime(message.timestamp)}</div>
               </div>
             </div>

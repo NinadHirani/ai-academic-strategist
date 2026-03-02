@@ -1,0 +1,33 @@
+Machine Learning Test Document
+
+Machine learning is a subset of artificial intelligence that focuses on the development of algorithms and models that can learn and make decisions from data. The key concepts include:
+
+1. Supervised Learning
+- Uses labeled training data
+- Examples: Classification, regression
+- Algorithms: Linear regression, decision trees, neural networks
+
+2. Unsupervised Learning  
+- Works with unlabeled data
+- Examples: Clustering, dimensionality reduction
+- Algorithms: K-means, PCA, autoencoders
+
+3. Reinforcement Learning
+- Learns through interaction with environment
+- Uses rewards and penalties
+- Applications: Game playing, robotics, autonomous systems
+
+4. Deep Learning
+- Uses neural networks with multiple layers
+- Excellent for image recognition, natural language processing
+- Popular frameworks: TensorFlow, PyTorch
+
+Applications of machine learning include:
+- Image and speech recognition
+- Natural language processing
+- Recommendation systems
+- Fraud detection
+- Medical diagnosis
+- Autonomous vehicles
+
+The process typically involves data collection, preprocessing, model training, evaluation, and deployment.

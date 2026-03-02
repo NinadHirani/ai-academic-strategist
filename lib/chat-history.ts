@@ -2,7 +2,8 @@
  * Chat History Management - Supabase Database Integration
  */
 
-import { supabase } from './supabase';
+import { getSupabaseClient } from './supabase';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 export type ChatMode = 'study' | 'deepExplore' | 'tutor' | 'review';
 
@@ -25,12 +26,47 @@ export interface ChatMessage {
   createdAt: Date;
 }
 
+// Use admin client (service role) if available to bypass RLS,
+// otherwise fall back to anon client
+let _adminClient: SupabaseClient | null = null;
+let _supabaseAvailable: boolean | null = null; // null = not tested yet
+
 function getClient() {
-  if (!supabase) {
+  // If we've already determined Supabase is unavailable, skip
+  if (_supabaseAvailable === false) {
+    return null;
+  }
+
+  // Prefer service role key (bypasses RLS) for server-side operations
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  
+  if (serviceKey && supabaseUrl) {
+    if (!_adminClient) {
+      _adminClient = createClient(supabaseUrl, serviceKey, {
+        auth: { autoRefreshToken: false, persistSession: false }
+      });
+    }
+    return _adminClient;
+  }
+  
+  // Fall back to anon client
+  const client = getSupabaseClient();
+  if (!client) {
     console.warn('[ChatHistory] Supabase not configured, using in-memory fallback');
     return null;
   }
-  return supabase;
+  return client;
+}
+
+// Mark Supabase as unavailable (called when operations fail)
+function markSupabaseUnavailable() {
+  if (_supabaseAvailable !== false) {
+    console.warn('[ChatHistory] Supabase connection failed, switching to in-memory storage for this session');
+    _supabaseAvailable = false;
+    // Reset after 60 seconds to retry
+    setTimeout(() => { _supabaseAvailable = null; }, 60000);
+  }
 }
 
 const inMemorySessions: Map<string, ChatSession> = new Map();
@@ -51,25 +87,33 @@ export async function createSession(
   };
 
   if (client) {
-    const { data, error } = await client
-      .from('chat_sessions')
-      .insert(sessionData)
-      .select()
-      .single();
+    try {
+      const { data, error } = await client
+        .from('chat_sessions')
+        .insert(sessionData)
+        .select()
+        .single();
 
-    if (error) {
-      console.error('[ChatHistory] Error creating session:', error);
-      throw error;
+      if (error) {
+        console.error('[ChatHistory] Error creating session:', error);
+        markSupabaseUnavailable();
+        // Fall through to in-memory
+      } else {
+        _supabaseAvailable = true;
+        return {
+          id: data.id,
+          userId: data.user_id,
+          title: data.title,
+          mode: data.mode,
+          createdAt: new Date(data.created_at),
+          updatedAt: new Date(data.updated_at),
+        };
+      }
+    } catch (e) {
+      console.error('[ChatHistory] Supabase connection error:', e);
+      markSupabaseUnavailable();
+      // Fall through to in-memory
     }
-
-    return {
-      id: data.id,
-      userId: data.user_id,
-      title: data.title,
-      mode: data.mode,
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at),
-    };
   }
 
   const id = `session-${Date.now()}-${++sessionCounter}`;
@@ -90,22 +134,31 @@ export async function getSession(sessionId: string): Promise<ChatSession | null>
   const client = getClient();
 
   if (client) {
-    const { data, error } = await client
-      .from('chat_sessions')
-      .select('*')
-      .eq('id', sessionId)
-      .single();
+    try {
+      const { data, error } = await client
+        .from('chat_sessions')
+        .select('*')
+        .eq('id', sessionId)
+        .single();
 
-    if (error || !data) return null;
-
-    return {
-      id: data.id,
-      userId: data.user_id,
-      title: data.title,
-      mode: data.mode,
-      createdAt: new Date(data.created_at),
-      updatedAt: new Date(data.updated_at),
-    };
+      if (error || !data) {
+        if (error) markSupabaseUnavailable();
+        // Fall through to in-memory
+      } else {
+        _supabaseAvailable = true;
+        return {
+          id: data.id,
+          userId: data.user_id,
+          title: data.title,
+          mode: data.mode,
+          createdAt: new Date(data.created_at),
+          updatedAt: new Date(data.updated_at),
+        };
+      }
+    } catch (e) {
+      console.error('[ChatHistory] getSession error:', e);
+      markSupabaseUnavailable();
+    }
   }
 
   return inMemorySessions.get(sessionId) || null;
@@ -118,26 +171,33 @@ export async function getUserSessions(
   const client = getClient();
 
   if (client) {
-    const { data, error } = await client
-      .from('chat_sessions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('updated_at', { ascending: false })
-      .limit(limit);
+    try {
+      const { data, error } = await client
+        .from('chat_sessions')
+        .select('*')
+        .eq('user_id', userId)
+        .order('updated_at', { ascending: false })
+        .limit(limit);
 
-    if (error) {
-      console.error('[ChatHistory] Error fetching sessions:', error);
-      return [];
+      if (error) {
+        console.error('[ChatHistory] Error fetching sessions:', error);
+        markSupabaseUnavailable();
+        // Fall through to in-memory
+      } else {
+        _supabaseAvailable = true;
+        return (data || []).map((session) => ({
+          id: session.id,
+          userId: session.user_id,
+          title: session.title,
+          mode: session.mode,
+          createdAt: new Date(session.created_at),
+          updatedAt: new Date(session.updated_at),
+        }));
+      }
+    } catch (e) {
+      console.error('[ChatHistory] getUserSessions error:', e);
+      markSupabaseUnavailable();
     }
-
-    return (data || []).map((session) => ({
-      id: session.id,
-      userId: session.user_id,
-      title: session.title,
-      mode: session.mode,
-      createdAt: new Date(session.created_at),
-      updatedAt: new Date(session.updated_at),
-    }));
   }
 
   return Array.from(inMemorySessions.values())
@@ -241,28 +301,33 @@ export async function addMessage(
   };
 
   if (client) {
-    const { data, error } = await client
-      .from('chat_messages')
-      .insert(messageData)
-      .select()
-      .single();
+    try {
+      const { data, error } = await client
+        .from('chat_messages')
+        .insert(messageData)
+        .select()
+        .single();
 
-    if (error) {
-      console.error('[ChatHistory] Error adding message:', error);
-      throw error;
+      if (error) {
+        console.error('[ChatHistory] Error adding message:', error);
+        markSupabaseUnavailable();
+        // Fall through to in-memory
+      } else {
+        await touchSession(sessionId);
+        return {
+          id: data.id,
+          sessionId: data.session_id,
+          role: data.role,
+          content: data.content,
+          modelUsed: data.model_used,
+          tokensUsed: data.tokens_used,
+          createdAt: new Date(data.created_at),
+        };
+      }
+    } catch (e) {
+      console.error('[ChatHistory] addMessage error:', e);
+      markSupabaseUnavailable();
     }
-
-    await touchSession(sessionId);
-
-    return {
-      id: data.id,
-      sessionId: data.session_id,
-      role: data.role,
-      content: data.content,
-      modelUsed: data.model_used,
-      tokensUsed: data.tokens_used,
-      createdAt: new Date(data.created_at),
-    };
   }
 
   const messages = inMemoryMessages.get(sessionId) || [];
@@ -289,27 +354,33 @@ export async function getSessionMessages(
   const client = getClient();
 
   if (client) {
-    const { data, error } = await client
-      .from('chat_messages')
-      .select('*')
-      .eq('session_id', sessionId)
-      .order('created_at', { ascending: true })
-      .limit(limit);
+    try {
+      const { data, error } = await client
+        .from('chat_messages')
+        .select('*')
+        .eq('session_id', sessionId)
+        .order('created_at', { ascending: true })
+        .limit(limit);
 
-    if (error) {
-      console.error('[ChatHistory] Error fetching messages:', error);
-      return [];
+      if (error) {
+        console.error('[ChatHistory] Error fetching messages:', error);
+        markSupabaseUnavailable();
+        // Fall through to in-memory
+      } else {
+        return (data || []).map((msg) => ({
+          id: msg.id,
+          sessionId: msg.session_id,
+          role: msg.role,
+          content: msg.content,
+          modelUsed: msg.model_used,
+          tokensUsed: msg.tokens_used,
+          createdAt: new Date(msg.created_at),
+        }));
+      }
+    } catch (e) {
+      console.error('[ChatHistory] getSessionMessages error:', e);
+      markSupabaseUnavailable();
     }
-
-    return (data || []).map((msg) => ({
-      id: msg.id,
-      sessionId: msg.session_id,
-      role: msg.role,
-      content: msg.content,
-      modelUsed: msg.model_used,
-      tokensUsed: msg.tokens_used,
-      createdAt: new Date(msg.created_at),
-    }));
   }
 
   const messages = inMemoryMessages.get(sessionId) || [];
@@ -402,12 +473,21 @@ export async function getSessionMessageCount(sessionId: string): Promise<number>
   const client = getClient();
 
   if (client) {
-    const { count, error } = await client
-      .from('chat_messages')
-      .select('*', { count: 'exact', head: true })
-      .eq('session_id', sessionId);
+    try {
+      const { count, error } = await client
+        .from('chat_messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('session_id', sessionId);
 
-    return error ? 0 : (count || 0);
+      if (error) {
+        markSupabaseUnavailable();
+        // Fall through to in-memory
+      } else {
+        return count || 0;
+      }
+    } catch (e) {
+      markSupabaseUnavailable();
+    }
   }
 
   const messages = inMemoryMessages.get(sessionId);

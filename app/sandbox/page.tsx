@@ -31,6 +31,7 @@ function randomStudyMode() {
 
 
 import React, { useState } from "react";
+import styles from "./sandbox.module.css";
 
 // ============================================================================
 // Main Sandbox Page — Exam Prompt Builder
@@ -158,70 +159,70 @@ export default function SandboxPage() {
                   </select>
                 </label>
 
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Topic / Chapter</span>
-                  <input value={studyTopic} onChange={(e) => setStudyTopic(e.target.value)} placeholder="e.g., Photosynthesis, Derivatives, WWII causes" style={inputStyle} />
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Topic / Chapter</span>
+                  <input value={studyTopic} onChange={(e) => setStudyTopic(e.target.value)} placeholder="e.g., Photosynthesis, Derivatives, WWII causes" className={styles.input} />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Custom Instructions / Keywords</span>
-                  <input value={customInstructions} onChange={(e) => setCustomInstructions(e.target.value)} placeholder="Any extra instructions or keywords..." style={inputStyle} />
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Custom Instructions / Keywords</span>
+                  <input value={customInstructions} onChange={(e) => setCustomInstructions(e.target.value)} placeholder="Any extra instructions or keywords..." className={styles.input} />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Answer Format</span>
-                  <select value={answerFormat} onChange={e => setAnswerFormat(e.target.value)} style={inputStyle}>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Answer Format</span>
+                  <select value={answerFormat} onChange={e => setAnswerFormat(e.target.value)} className={styles.input}>
                     <option value="paragraph">Paragraph</option>
                     <option value="list">List</option>
                     <option value="table">Table</option>
                     <option value="diagram">Diagram</option>
                   </select>
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Difficulty Level</span>
-                  <select value={difficulty} onChange={e => setDifficulty(e.target.value)} style={inputStyle}>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Difficulty Level</span>
+                  <select value={difficulty} onChange={e => setDifficulty(e.target.value)} className={styles.input}>
                     <option value="easy">Easy</option>
                     <option value="medium">Medium</option>
                     <option value="hard">Hard</option>
                   </select>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <label className={styles.checkboxRow}>
                   <input type="checkbox" checked={includeExamples} onChange={e => setIncludeExamples(e.target.checked)} />
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Include Examples</span>
+                  <span className={styles.checkboxText}>Include Examples</span>
                 </label>
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <label className={styles.checkboxRow}>
                   <input type="checkbox" checked={includeReferences} onChange={e => setIncludeReferences(e.target.checked)} />
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Include References</span>
+                  <span className={styles.checkboxText}>Include References</span>
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Follow-up Questions</span>
-                  <input type="number" min={0} max={5} value={followUpCount} onChange={e => setFollowUpCount(Number(e.target.value))} style={inputStyle} />
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Follow-up Questions</span>
+                  <input type="number" min={0} max={5} value={followUpCount} onChange={e => setFollowUpCount(Number(e.target.value))} className={styles.input} />
                 </label>
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Recap Style</span>
-                  <select value={recapStyle} onChange={e => setRecapStyle(e.target.value)} style={inputStyle}>
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Recap Style</span>
+                  <select value={recapStyle} onChange={e => setRecapStyle(e.target.value)} className={styles.input}>
                     <option value="one-line">One-line</option>
                     <option value="summary">Summary</option>
                     <option value="none">None</option>
                   </select>
                 </label>
 
-                <label style={{ display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-                  <span style={{ fontSize: "0.7rem", color: "var(--text-tertiary)", textTransform: "uppercase", letterSpacing: "0.05em" }}>Answer length (sentences)</span>
-                  <input type="number" min={1} max={8} value={studyConstraints.sentences} onChange={(e) => setStudyConstraints({ ...studyConstraints, sentences: Number(e.target.value) })} style={inputStyle} />
+                <label className={styles.field}>
+                  <span className={styles.fieldLabel}>Answer length (sentences)</span>
+                  <input type="number" min={1} max={8} value={studyConstraints.sentences} onChange={(e) => setStudyConstraints({ ...studyConstraints, sentences: Number(e.target.value) })} className={styles.input} />
                 </label>
 
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <label className={styles.checkboxRow}>
                   <input type="checkbox" checked={studyConstraints.bullets} onChange={(e) => setStudyConstraints({ ...studyConstraints, bullets: e.target.checked })} />
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Bullet-only answers</span>
+                  <span className={styles.checkboxText}>Bullet-only answers</span>
                 </label>
 
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <label className={styles.checkboxRow}>
                   <input type="checkbox" checked={studyConstraints.hints} onChange={(e) => setStudyConstraints({ ...studyConstraints, hints: e.target.checked })} />
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Hint-first (reveal gradually)</span>
+                  <span className={styles.checkboxText}>Hint-first (reveal gradually)</span>
                 </label>
 
-                <label style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+                <label className={styles.checkboxRow}>
                   <input type="checkbox" checked={studyConstraints.rubric} onChange={(e) => setStudyConstraints({ ...studyConstraints, rubric: e.target.checked })} />
-                  <span style={{ fontSize: "0.8rem", color: "var(--text-secondary)" }}>Rubric-style critique</span>
+                  <span className={styles.checkboxText}>Rubric-style critique</span>
                 </label>
               </div>
 
@@ -242,61 +243,53 @@ export default function SandboxPage() {
                   if (prompt) setStudyPrompt(prompt);
                   setEditingPrompt(null);
                 }}
-                style={{
-                  marginTop: "0.75rem",
-                  padding: "0.65rem 1.25rem",
-                  background: "var(--gradient-primary)",
-                  border: "none",
-                  borderRadius: "var(--radius-md)",
-                  color: "white",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                }}
+                className={styles.actionButton}
               >
                 Build Prompt
               </button>
             </div>
 
             {studyPrompt && (
-              <div style={{ position: "relative", padding: "1rem", background: "var(--bg-secondary)", borderRadius: "var(--radius-md)", border: "1px solid var(--border-subtle)", fontFamily: "var(--font-mono)", fontSize: "0.9rem", whiteSpace: "pre-wrap", marginBottom: "0.5rem" }}>
+              <div className={styles.promptBox}>
                 <CopyPromptButton prompt={editingPrompt ?? studyPrompt} />
                 {editingPrompt !== null ? (
                   <textarea
                     value={editingPrompt}
                     onChange={e => setEditingPrompt(e.target.value)}
-                    style={{ width: "100%", minHeight: "80px", fontFamily: "var(--font-mono)", fontSize: "0.9rem", marginTop: "0.5rem" }}
+                    className={styles.textareaEdit}
+                    aria-label="Edit prompt"
                   />
                 ) : (
                   <div>{studyPrompt}</div>
                 )}
-                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.5rem" }}>
+                <div className={styles.buttonRow}>
                   <button
                     onClick={() => setEditingPrompt(studyPrompt)}
-                    style={{ padding: "0.3rem 0.8rem", background: "var(--bg-tertiary)", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer" }}
+                    className={styles.smallButton}
                   >Edit</button>
                   {editingPrompt !== null && (
                     <button
                       onClick={() => { setStudyPrompt(editingPrompt ?? studyPrompt); setEditingPrompt(null); }}
-                      style={{ padding: "0.3rem 0.8rem", background: "var(--gradient-primary)", color: "white", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer" }}
+                      className={styles.saveButton}
                     >Save</button>
                   )}
                   <button
                     onClick={() => setFavoritePrompts([...favoritePrompts, (editingPrompt ?? studyPrompt)])}
-                    style={{ padding: "0.3rem 0.8rem", background: "#a855f7", color: "white", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer" }}
+                    className={styles.favoriteButton}
                   >Save as Favorite</button>
                 </div>
               </div>
             )}
             {favoritePrompts.length > 0 && (
-              <div style={{ marginBottom: "1rem" }}>
-                <h4 style={{ fontSize: "0.9rem", color: "var(--accent-blue)", marginBottom: "0.5rem" }}>Favorite Prompts</h4>
-                <ul style={{ listStyle: "none", padding: 0 }}>
+              <div className={styles.favorites}>
+                <h4 className={styles.favoritesTitle}>Favorite Prompts</h4>
+                <ul className={styles.favoriteList}>
                   {favoritePrompts.map((fp, i) => (
-                    <li key={i} style={{ marginBottom: "0.5rem", background: "var(--bg-tertiary)", borderRadius: "var(--radius-sm)", padding: "0.5rem" }}>
-                      <div style={{ fontFamily: "var(--font-mono)", fontSize: "0.9rem", marginBottom: "0.25rem" }}>{fp}</div>
+                    <li key={i} className={styles.favoriteItem}>
+                      <div className={styles.favoritePrompt}>{fp}</div>
                       <button
                         onClick={() => setStudyPrompt(fp)}
-                        style={{ padding: "0.2rem 0.7rem", background: "var(--gradient-primary)", color: "white", border: "none", borderRadius: "var(--radius-sm)", cursor: "pointer", fontSize: "0.85rem" }}
+                        className={styles.useButton}
                       >Use</button>
                     </li>
                   ))}
@@ -310,21 +303,13 @@ export default function SandboxPage() {
         {/* ABOUT TAB */}
         {/* ================================================================ */}
         {activeTab === "about" && (
-          <div style={{
-            padding: "1.25rem",
-            background: "var(--bg-secondary)",
-            borderRadius: "var(--radius-md)",
-            border: "1px solid var(--border-subtle)",
-            fontSize: "0.85rem",
-            color: "var(--text-secondary)",
-            lineHeight: 1.8,
-          }}>
-            <h2 style={{ color: "var(--text-primary)", marginBottom: "0.75rem", fontSize: "1.1rem" }}>
+          <div className={styles.aboutCard}>
+            <h2 className={styles.aboutHeading}>
               About This Module
             </h2>
 
-            <section style={{ marginBottom: "1.25rem" }}>
-              <h3 style={{ color: "var(--accent-blue)", fontSize: "0.9rem", marginBottom: "0.5rem" }}>What Is This?</h3>
+            <section className={styles.aboutSection}>
+              <h3 className={styles.aboutSubheading}>What Is This?</h3>
               <p>
                 The <strong>Exam Prompt Builder</strong> helps you craft high-quality, rubric-aligned prompts
                 for exam preparation. Choose a study mode, enter your topic, set constraints, and generate
@@ -332,9 +317,9 @@ export default function SandboxPage() {
               </p>
             </section>
 
-            <section style={{ marginBottom: "1.25rem" }}>
-              <h3 style={{ color: "var(--accent-blue)", fontSize: "0.9rem", marginBottom: "0.5rem" }}>How To Use</h3>
-              <ul style={{ paddingLeft: "1.25rem" }}>
+            <section className={styles.aboutSection}>
+              <h3 className={styles.aboutSubheading}>How To Use</h3>
+              <ul className={styles.aboutList}>
                 <li><strong>Study Tab</strong> — Select a mode (Concept Refresh, Formula Drill, Past-Paper, Flashcards, or Common Mistakes)</li>
                 <li><strong>Topic</strong> — Enter the subject or chapter you want to revise</li>
                 <li><strong>Constraints</strong> — Set answer length, bullet format, hints, and rubric critique</li>
@@ -343,9 +328,9 @@ export default function SandboxPage() {
               </ul>
             </section>
 
-            <section style={{ marginBottom: "1.25rem" }}>
-              <h3 style={{ color: "var(--accent-blue)", fontSize: "0.9rem", marginBottom: "0.5rem" }}>Study Modes</h3>
-              <ul style={{ paddingLeft: "1.25rem" }}>
+            <section className={styles.aboutSection}>
+              <h3 className={styles.aboutSubheading}>Study Modes</h3>
+              <ul className={styles.aboutList}>
                 <li><strong>Concept Refresh</strong> — Quick summary of key ideas</li>
                 <li><strong>Formula Drill</strong> — Formulae with worked examples</li>
                 <li><strong>Past-Paper Style</strong> — Exam-format questions with model answers</li>
@@ -354,8 +339,8 @@ export default function SandboxPage() {
               </ul>
             </section>
 
-            <section style={{ padding: "0.75rem", background: "rgba(168, 85, 247, 0.08)", borderRadius: "var(--radius-md)" }}>
-              <h3 style={{ color: "#a855f7", fontSize: "0.9rem", marginBottom: "0.5rem" }}>💡 Tip</h3>
+            <section className={styles.tipCard}>
+              <h3 className={styles.tipHeading}>💡 Tip</h3>
               <p>
                 This tool is a <strong>prompt maker</strong>, not an AI model. It builds the best possible
                 prompt for your exam topic so that when you paste it into the Study AI, you get focused,
@@ -373,18 +358,6 @@ export default function SandboxPage() {
 // Helpers
 // ============================================================================
 
-const inputStyle: React.CSSProperties = {
-  padding: "0.5rem 0.6rem",
-  background: "var(--bg-input)",
-  border: "1px solid var(--border-subtle)",
-  borderRadius: "var(--radius-sm)",
-  color: "var(--text-primary)",
-  fontSize: "0.8rem",
-  fontFamily: "var(--font-mono)",
-  outline: "none",
-  width: "100%",
-};
-
 function CopyPromptButton({ prompt }: { prompt: string }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = async () => {
@@ -400,21 +373,7 @@ function CopyPromptButton({ prompt }: { prompt: string }) {
   return (
     <button
       onClick={handleCopy}
-      style={{
-        position: "absolute",
-        top: "8px",
-        right: "16px",
-        padding: "0.4rem 1rem",
-        background: "var(--gradient-primary)",
-        color: "white",
-        border: "none",
-        borderRadius: "var(--radius-sm)",
-        fontWeight: 600,
-        fontSize: "0.85rem",
-        cursor: "pointer",
-        boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-        zIndex: 2,
-      }}
+      className={styles.copyButton}
     >
       {copied ? "Copied!" : "Copy to clipboard"}
     </button>
