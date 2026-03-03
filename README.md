@@ -85,9 +85,9 @@ npm run dev
 ## 📝 Environment Variables
 
 ```env
-OPENAI_API_KEY=***REMOVED***
-SUPABASE_URL=***REMOVED***
-SUPABASE_ANON_KEY=***REMOVED***
+OPENAI_API_KEY=your_openai_key
+SUPABASE_URL=your_supabase_url
+SUPABASE_ANON_KEY=your_supabase_anon_key
 ```
 
 ---

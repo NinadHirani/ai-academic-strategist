@@ -819,59 +819,71 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         }),
       });
 
-      // 2) If Groq rate-limited (429/402/403), try OpenRouter free models
+      // 2) If Groq rate-limited (429/402/403), try OpenRouter free models (supports multiple keys)
       if (!chatResponse.ok && [429, 402, 403].includes(chatResponse.status)) {
       const groqErr = await chatResponse.json().catch(() => ({}));
       console.warn(`[Chat] Groq rate-limited (${chatResponse.status}): ${groqErr.error?.message || "unknown"}. Trying OpenRouter...`);
 
-      const openrouterKey = process.env.OPENROUTER_API_KEY;
-      if (openrouterKey) {
+      const openrouterKeys = [
+        process.env.OPENROUTER_API_KEY,
+        process.env.OPENROUTER_API_KEY_SECOND,
+      ].filter(Boolean);
+
+      if (openrouterKeys.length) {
         const fallbackModels = (
           process.env.OPENROUTER_MODELS ||
-          "meta-llama/llama-3.3-70b-instruct:free,google/gemma-3-27b-it:free,mistralai/mistral-small-3.1-24b-instruct:free,qwen/qwen3-coder:free"
+          "meta-llama/llama-3.3-70b-instruct:free,google/gemma-3-27b-it:free,mistralai/mistral-small-3.1-24b-instruct:free,qwen/qwen3-coder:free,nvidia/nemotron-nano-9b-v2:free"
         )
           .split(",")
           .map((m) => m.trim())
           .filter(Boolean)
           .filter((m) => m.toLowerCase().includes(":free"));
 
-        for (const fallbackModel of fallbackModels) {
-          try {
-            console.log(`[Chat] Trying OpenRouter model: ${fallbackModel}`);
-            const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${openrouterKey}`,
-                "HTTP-Referer": "http://localhost:3000",
-                "X-Title": "AI Academic Chat",
-              },
-              body: JSON.stringify({
-                model: fallbackModel,
-                messages,
-                temperature: 0.55,
-                max_tokens: 2000,
-                top_p: 0.85,
-              }),
-            });
+        let openRouterSucceeded = false;
 
-            if (orResponse.ok) {
-              chatResponse = orResponse;
-              usedProvider = `openrouter/${fallbackModel}`;
-              console.log(`[Chat] ✓ OpenRouter success with ${fallbackModel}`);
-              break;
-            }
+        for (const openrouterKey of openrouterKeys) {
+          for (const fallbackModel of fallbackModels) {
+            try {
+              console.log(`[Chat] Trying OpenRouter model: ${fallbackModel} with provided key`);
+              const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  Authorization: `Bearer ${openrouterKey}`,
+                  "HTTP-Referer": "http://localhost:3000",
+                  "X-Title": "AI Academic Chat",
+                },
+                body: JSON.stringify({
+                  model: fallbackModel,
+                  messages,
+                  temperature: 0.55,
+                  max_tokens: 2000,
+                  top_p: 0.85,
+                }),
+              });
 
-            // Skip 404/429/402/403 and try next model
-            const status = orResponse.status;
-            if ([404, 429, 402, 403].includes(status)) {
-              console.warn(`[Chat] OpenRouter ${fallbackModel} returned ${status}, trying next...`);
+              if (orResponse.ok) {
+                chatResponse = orResponse;
+                usedProvider = `openrouter/${fallbackModel}`;
+                openRouterSucceeded = true;
+                console.log(`[Chat] ✓ OpenRouter success with ${fallbackModel}`);
+                break;
+              }
+
+              const status = orResponse.status;
+              if ([404, 429, 402, 403].includes(status)) {
+                console.warn(`[Chat] OpenRouter ${fallbackModel} returned ${status}, trying next model or key...`);
+                // If rate-limited/billing, jump to next key instead of hammering the same one
+                if ([429, 402, 403].includes(status)) break;
+                continue;
+              }
+            } catch (orErr) {
+              console.warn(`[Chat] OpenRouter ${fallbackModel} error:`, orErr);
               continue;
             }
-          } catch (orErr) {
-            console.warn(`[Chat] OpenRouter ${fallbackModel} error:`, orErr);
-            continue;
           }
+
+          if (openRouterSucceeded) break; // stop trying more keys
         }
       }
     }
