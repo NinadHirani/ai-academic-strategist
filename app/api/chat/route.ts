@@ -636,7 +636,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     console.log(`- Vector Store Stats:`, vectorStoreStats);
     
     if (documents.length > 0) {
-      console.log("[DEBUG] Document Names:", documents.slice(0, 5).map(d => d.name || d.title || 'Unnamed'));
+      console.log("[DEBUG] Document Names:", documents.slice(0, 5).map(d => d.name || 'Unnamed'));
       if (documents.length > 5) console.log(`... and ${documents.length - 5} more documents`);
     } else {
       console.log("⚠️ [DEBUG] NO DOCUMENTS FOUND in Supabase!");
@@ -796,31 +796,104 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     console.log("- Has retrieved context:", !!retrievedContext);
     console.log("- Retrieved context in prompt:", systemPrompt.includes("The following content was retrieved"));
 
-    const chatResponse = await fetch(`${config.baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${config.apiKey}`,
-      },
-      body: JSON.stringify({
-        model: config.model,
-        messages,
-        temperature: 0.55,
-        max_tokens: 2000,
-        top_p: 0.85,
-        frequency_penalty: 0.3,
-        presence_penalty: 0.2,
-      }),
-    });
+    // ---- LLM call with Groq → OpenRouter fallback ----
+    let chatResponse: Response | null = null;
+    let usedProvider = "groq";
+
+    try {
+      // 1) Try Groq first
+      chatResponse = await fetch(`${config.baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${config.apiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages,
+          temperature: 0.55,
+          max_tokens: 2000,
+          top_p: 0.85,
+          frequency_penalty: 0.3,
+          presence_penalty: 0.2,
+        }),
+      });
+
+      // 2) If Groq rate-limited (429/402/403), try OpenRouter free models
+      if (!chatResponse.ok && [429, 402, 403].includes(chatResponse.status)) {
+      const groqErr = await chatResponse.json().catch(() => ({}));
+      console.warn(`[Chat] Groq rate-limited (${chatResponse.status}): ${groqErr.error?.message || "unknown"}. Trying OpenRouter...`);
+
+      const openrouterKey = process.env.OPENROUTER_API_KEY;
+      if (openrouterKey) {
+        const fallbackModels = (
+          process.env.OPENROUTER_MODELS ||
+          "meta-llama/llama-3.3-70b-instruct:free,google/gemma-3-27b-it:free,mistralai/mistral-small-3.1-24b-instruct:free,qwen/qwen3-coder:free"
+        )
+          .split(",")
+          .map((m) => m.trim())
+          .filter(Boolean)
+          .filter((m) => m.toLowerCase().includes(":free"));
+
+        for (const fallbackModel of fallbackModels) {
+          try {
+            console.log(`[Chat] Trying OpenRouter model: ${fallbackModel}`);
+            const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                Authorization: `Bearer ${openrouterKey}`,
+                "HTTP-Referer": "http://localhost:3000",
+                "X-Title": "AI Academic Chat",
+              },
+              body: JSON.stringify({
+                model: fallbackModel,
+                messages,
+                temperature: 0.55,
+                max_tokens: 2000,
+                top_p: 0.85,
+              }),
+            });
+
+            if (orResponse.ok) {
+              chatResponse = orResponse;
+              usedProvider = `openrouter/${fallbackModel}`;
+              console.log(`[Chat] ✓ OpenRouter success with ${fallbackModel}`);
+              break;
+            }
+
+            // Skip 404/429/402/403 and try next model
+            const status = orResponse.status;
+            if ([404, 429, 402, 403].includes(status)) {
+              console.warn(`[Chat] OpenRouter ${fallbackModel} returned ${status}, trying next...`);
+              continue;
+            }
+          } catch (orErr) {
+            console.warn(`[Chat] OpenRouter ${fallbackModel} error:`, orErr);
+            continue;
+          }
+        }
+      }
+    }
+  } catch (fetchErr) {
+    console.error("[Chat] LLM request error:", fetchErr);
+    const msgText = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+    const errorMsg = `[${usedProvider}] LLM request failed: ${msgText}`;
+    return NextResponse.json({ error: errorMsg }, { status: 500 });
+  }
 
     if (!chatResponse.ok) {
       const errorData = await chatResponse.json().catch(() => ({}));
-      const errorMsg = errorData.error?.message || "AI request failed";
+      const baseMsg = errorData.error?.message || chatResponse.statusText || "AI request failed";
+      const errorMsg = `[${usedProvider}] ${baseMsg} (status ${chatResponse.status})`;
       console.error("❌ [DEBUG] Chat API Error:", errorMsg);
-      console.error("- Status:", chatResponse.status);
+      console.error("- Status:", chatResponse.status, chatResponse.statusText);
+      console.error("- Provider:", usedProvider);
       console.error("- Response:", errorData);
       return NextResponse.json({ error: errorMsg }, { status: chatResponse.status });
     }
+
+    console.log(`[Chat] Response from provider: ${usedProvider}`);
 
     const responseData = await chatResponse.json();
     let assistantMessage = responseData.choices?.[0]?.message?.content ||

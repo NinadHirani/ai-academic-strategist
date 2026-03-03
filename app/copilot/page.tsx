@@ -78,7 +78,7 @@ export default function CopilotPage() {
   // ---- Expand a topic ----
   const handleExpand = useCallback(
     async (topic: RoadmapTopic) => {
-      if (state.expandedTopics[topic.id]) return; // Already expanded
+      if (state.expandedTopics[topic.id] && !(state.expandedTopics[topic.id] as any)?.loading) return; // Already expanded
 
       setState((s) => ({
         ...s,
@@ -89,6 +89,9 @@ export default function CopilotPage() {
       }));
 
       try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
         const res = await fetch("/api/copilot/expand", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -97,7 +100,9 @@ export default function CopilotPage() {
             subject: state.syllabus?.subject || state.query,
             university: state.syllabus?.university || "",
           }),
+          signal: controller.signal,
         });
+        clearTimeout(timeout);
 
         const data = await res.json();
 
@@ -117,19 +122,23 @@ export default function CopilotPage() {
               [topic.id]: {
                 topicId: topic.id,
                 topicName: topic.name,
-                conceptOverview: "Failed to load expansion.",
+                conceptOverview: `Failed to load: ${data.error || "Unknown error"}. Click the topic again to retry.`,
                 examples: [],
                 pastYearPatterns: "",
                 articles: [],
                 youtubeResources: [],
                 academicReferences: [],
                 generatedAt: new Date().toISOString(),
-                error: data.error,
+                _failed: true,
               } as any,
             },
           }));
         }
-      } catch {
+      } catch (err: any) {
+        const errorMsg = err.name === "AbortError"
+          ? "Request timed out. Click the topic again to retry."
+          : `Network error: ${err.message}. Click the topic again to retry.`;
+        
         setState((s) => ({
           ...s,
           expandedTopics: {
@@ -137,13 +146,14 @@ export default function CopilotPage() {
             [topic.id]: {
               topicId: topic.id,
               topicName: topic.name,
-              conceptOverview: "Network error loading expansion.",
+              conceptOverview: errorMsg,
               examples: [],
               pastYearPatterns: "",
               articles: [],
               youtubeResources: [],
               academicReferences: [],
               generatedAt: new Date().toISOString(),
+              _failed: true,
             } as any,
           },
         }));
@@ -214,9 +224,12 @@ export default function CopilotPage() {
           <div className="copilot-loading">
             <div className="copilot-loading-bar" />
             <p className="copilot-loading-text">
-              {state.step === "searching" && "🔎 Searching for official syllabus..."}
-              {state.step === "parsing" && "📄 Parsing syllabus structure..."}
-              {state.step === "roadmap" && "🗺️ Generating study roadmap..."}
+              {state.step === "searching" && "🔎 Analyzing your query and generating syllabus from academic knowledge..."}
+              {state.step === "parsing" && "📄 Structuring syllabus into units, topics and subtopics..."}
+              {state.step === "roadmap" && "🗺️ Building personalized study roadmap..."}
+            </p>
+            <p className="copilot-loading-hint">
+              This may take 15-30 seconds — generating comprehensive syllabus data
             </p>
           </div>
         )}
@@ -407,9 +420,13 @@ function TopicNode({
   const [isOpen, setIsOpen] = useState(false);
   const isLoading = expansion?.loading === true;
   const hasExpansion = expansion && !expansion.loading;
+  const hasFailed = expansion?._failed === true;
 
   const handleClick = () => {
     if (!hasExpansion && !isLoading) {
+      onExpand();
+    } else if (hasFailed) {
+      // Allow retry on failed expansions
       onExpand();
     }
     setIsOpen(!isOpen);
@@ -425,6 +442,7 @@ function TopicNode({
         <span className="copilot-topic-name">{topic.name}</span>
         <DifficultyBadge level={topic.difficulty} />
         <span className="copilot-topic-time">{topic.estimatedMinutes}min</span>
+        {hasFailed && <span className="copilot-retry-badge" title="Click to retry">🔄</span>}
       </div>
 
       {/* Subtopics (always visible when open) */}
@@ -456,12 +474,22 @@ function TopicNode({
           {isLoading && (
             <div className="copilot-topic-loading">
               <span className="copilot-spinner-sm" />
-              Fetching resources and generating explanation...
+              Generating detailed explanation with resources... (may take 15-30s)
             </div>
           )}
 
           {/* Expanded Content */}
-          {hasExpansion && <TopicExpansionView expansion={expansion} />}
+          {hasExpansion && !hasFailed && <TopicExpansionView expansion={expansion} />}
+          
+          {/* Failed State */}
+          {hasFailed && (
+            <div className="copilot-topic-error">
+              <p>⚠️ {expansion.conceptOverview}</p>
+              <button onClick={onExpand} className="copilot-retry-btn">
+                🔄 Retry
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>

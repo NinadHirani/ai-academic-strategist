@@ -1125,11 +1125,27 @@ body::before {
 }
 
 .document-progress-bar {
+  /* styled progress element, width is controlled by component via value attribute */
+  width: 100%;
   height: 100%;
   background: var(--accent-blue);
   border-radius: 2px;
   transition: width 0.3s ease;
   animation: progressPulse 1.5s ease-in-out infinite;
+  appearance: none;
+}
+
+/* hide default progress appearance for better styling */
+.document-progress-bar::-webkit-progress-bar {
+  background: transparent;
+}
+.document-progress-bar::-webkit-progress-value {
+  background: var(--accent-blue);
+  border-radius: 2px;
+}
+.document-progress-bar::-moz-progress-bar {
+  background: var(--accent-blue);
+  border-radius: 2px;
 }
 
 @keyframes progressPulse {
@@ -1897,6 +1913,40 @@ body::before {
   font-size: 0.8rem;
   color: var(--text-tertiary);
   padding: 0.5rem 0;
+}
+.copilot-loading-hint {
+  font-size: 0.75rem;
+  color: #888;
+  margin-top: 0.5rem;
+}
+.copilot-topic-error {
+  padding: 0.75rem;
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: var(--radius-sm);
+  margin-top: 0.5rem;
+}
+.copilot-topic-error p {
+  font-size: 0.8rem;
+  color: #ef4444;
+  margin-bottom: 0.5rem;
+}
+.copilot-retry-btn {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #ef4444;
+  padding: 0.35rem 0.75rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.copilot-retry-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+}
+.copilot-retry-badge {
+  font-size: 0.7rem;
+  margin-left: 0.25rem;
 }
 
 /* Topic Expansion Panel */

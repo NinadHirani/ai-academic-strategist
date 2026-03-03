@@ -376,9 +376,10 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
                   {/* Progress bar for processing documents */}
                   {doc.status === "processing" && doc.progress !== undefined && (
                     <div className="document-progress">
-                      <div 
-                        className="document-progress-bar" 
-                        style={{ width: `${doc.progress}%` } as React.CSSProperties}
+                      <progress
+                        className="document-progress-bar"
+                        value={doc.progress}
+                        max={100}
                       />
                     </div>
                   )}

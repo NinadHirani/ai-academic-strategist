@@ -1,13 +1,13 @@
 /**
  * API: /api/copilot/search
- * Searches for a syllabus and parses it into structured JSON.
- * Also generates a full study roadmap in one call.
+ * Runs the full pipeline: web search + LLM knowledge → syllabus → roadmap
+ * Now uses LLM knowledge as primary source with web search as supplement.
  */
 
 import { NextRequest, NextResponse } from "next/server";
 import { runFullPipeline } from "@/lib/copilot-engine";
 
-export const maxDuration = 60; // Allow up to 60s for search + parse + roadmap
+export const maxDuration = 90; // Allow up to 90s for the full pipeline
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
 
     const elapsed = Date.now() - startTime;
     console.log(
-      `[Copilot/Search] Pipeline completed in ${elapsed}ms — ${syllabus.totalTopics} topics, ${roadmap.totalEstimatedHours}h estimated`
+      `[Copilot/Search] Pipeline completed in ${elapsed}ms — ${syllabus.totalTopics} topics across ${syllabus.units.length} units, ${roadmap.totalEstimatedHours}h estimated`
     );
 
     return NextResponse.json({
@@ -39,18 +39,27 @@ export async function POST(req: NextRequest) {
         query,
         elapsedMs: elapsed,
         totalTopics: syllabus.totalTopics,
+        totalUnits: syllabus.units.length,
         totalHours: roadmap.totalEstimatedHours,
       },
     });
   } catch (error: any) {
     console.error("[Copilot/Search] Error:", error);
+    let hint: string | undefined;
+    if (error.message?.toLowerCase().includes("rate limit")) {
+      hint =
+        "Groq API quota exceeded — please wait a few minutes or upgrade your plan.";
+    } else if (error.message?.includes("API")) {
+      hint = "Check that GROQ_API_KEY is set in .env.local";
+    } else {
+      hint = "Try a more specific query like 'Theory of Computation, Semester 6, GTU'";
+    }
+
     return NextResponse.json(
       {
         success: false,
         error: error.message || "Pipeline failed",
-        hint: error.message?.includes("API")
-          ? "Check that TAVILY_API_KEY or SERPAPI_KEY and GROQ_API_KEY are set in .env.local"
-          : undefined,
+        hint,
       },
       { status: 500 }
     );

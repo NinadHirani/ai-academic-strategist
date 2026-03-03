@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { expandTopic, validateLinks } from "@/lib/copilot-engine";
 import type { RoadmapTopic } from "@/lib/copilot-types";
 
-export const maxDuration = 45;
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
