@@ -114,12 +114,12 @@ function logRetrieval(
     topScores: results.slice(0, 5).map(r => Number(r.score.toFixed(4))),
     filter,
   };
-  
+
   retrievalLogs.push(log);
   if (retrievalLogs.length > MAX_LOG_ENTRIES) {
     retrievalLogs.shift();
   }
-  
+
   console.log("[VectorStore] Retrieval debug:", JSON.stringify(log));
 }
 
@@ -143,7 +143,7 @@ export function clearRetrievalLogs(): void {
 class SupabaseVectorStore {
   private supabaseUrl: string;
   private supabaseKey: string;
-  private supabase: any; // Supabase client
+  private supabase: ReturnType<typeof createClient> | null = null;
   private similarityMetric: SimilarityMetric;
   private memoryCache: Map<string, VectorChunk> = new Map();
   private documentChunks: Map<string, VectorChunk[]> = new Map();
@@ -153,7 +153,7 @@ class SupabaseVectorStore {
     this.supabaseUrl = options.supabaseUrl || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
     this.supabaseKey = options.supabaseKey || process.env.SUPABASE_SERVICE_ROLE_KEY || "";
     this.similarityMetric = options.similarityMetric || "cosine";
-    
+
     // Initialize Supabase client
     if (this.supabaseUrl && this.supabaseKey) {
       try {
@@ -190,7 +190,7 @@ class SupabaseVectorStore {
       const { data, error } = await this.supabase
         .from('document_chunks')
         .select('*');
-      
+
       if (error) {
         console.error("[SupabaseVectorStore] Fetch error:", error);
         return;
@@ -313,19 +313,20 @@ class SupabaseVectorStore {
     // ALWAYS fetch from Supabase when configured to get latest data
     if (this.isConfigured()) {
       try {
-        let query = this.supabase
+        if (!this.supabase) return [];
+        const query = this.supabase
           .from('document_chunks')
           .select('*');
-        
+
         const { data, error } = await query;
-        
+
         if (error) {
           console.error("[SupabaseVectorStore] Fetch error:", error);
         } else if (data && data.length > 0) {
           // Clear and rebuild local cache with Supabase data
           this.memoryCache.clear();
           this.documentChunks.clear();
-          
+
           for (const row of data) {
             const chunk: VectorChunk = {
               id: row.id,
@@ -543,7 +544,7 @@ class InMemoryVectorStore {
    */
   private saveToDisk(): void {
     try {
-      saveChunksToDisk(this.chunks as any);
+      saveChunksToDisk(this.chunks);
     } catch (error) {
       console.error("[InMemoryVectorStore] Save error:", error);
     }
@@ -715,9 +716,9 @@ export function initVectorStore(options?: VectorStoreOptions): void {
  */
 export function getVectorStore(options?: VectorStoreOptions): InMemoryVectorStore | SupabaseVectorStore {
   if (!vectorStoreInstance) {
-    const useSupabaseMode = options?.useSupabase || 
+    const useSupabaseMode = options?.useSupabase ||
       (!!process.env.NEXT_PUBLIC_SUPABASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY);
-    
+
     if (useSupabaseMode) {
       vectorStoreInstance = new SupabaseVectorStore({
         similarityMetric: options?.similarityMetric || 'cosine',

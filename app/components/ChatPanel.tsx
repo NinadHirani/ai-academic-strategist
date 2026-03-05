@@ -1,7 +1,9 @@
-
 "use client";
 
-import React, { useState, useRef, useEffect, useMemo } from "react";
+import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { RoadmapTree } from "./CopilotWidgets";
+import { PromptBlock } from "./PromptWidgets";
+import type { RoadmapTopic, TopicExpansion } from "@/lib/copilot-types";
 
 interface UploadedDocument {
   id: string;
@@ -11,20 +13,33 @@ interface UploadedDocument {
   chunkCount?: number;
 }
 
+interface ChatSession {
+  id: string;
+  title: string;
+  mode: "study" | "deepExplore";
+  updatedAt: string;
+}
+
 interface ChatPanelProps {
   activeMode: "study" | "deepExplore";
   documents?: UploadedDocument[];
   onRequestUpload?: () => void;
   onClearDocuments?: () => void | Promise<void>;
   onDocumentsChange?: (docs: UploadedDocument[]) => void;
-  mode: string;
-  updatedAt: string;
 }
 
 interface SourceInfo {
   documentName: string;
   chunkIndex: number;
   score: number;
+}
+
+interface ToolResultInfo {
+  tool: string;
+  label: string;
+  emoji: string;
+  data?: any;
+  error?: string;
 }
 
 interface Message {
@@ -34,6 +49,7 @@ interface Message {
   timestamp: Date;
   sources?: SourceInfo[];
   hasDocuments?: boolean;
+  toolResult?: ToolResultInfo;
 }
 
 interface Section {
@@ -73,32 +89,32 @@ const sectionIcons: Record<string, string> = {
 // Enhanced markdown parser for rendering formatted text
 function parseMarkdown(content: string): string {
   let html = content;
-  
+
   // Mermaid diagrams - preserve as pre-formatted code block
   html = html.replace(/```mermaid\n?([\s\S]*?)```/g, '<pre class="mermaid-diagram"><code class="language-mermaid">$1</code></pre>');
-  
+
   // Regular code blocks
   html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, '<pre><code>$2</code></pre>');
-  
+
   // Inline code
   html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
-  
+
   // Headers
   html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
   html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
   html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
-  
+
   // Bold
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  
+
   // Markdown tables - convert to HTML table
   const tableRegex = /(\|.+\|)\n(\|[-:\s|]+\|)\n((?:\|.+\|\n?)+)/g;
   html = html.replace(tableRegex, (match) => {
     const rows = match.trim().split('\n');
     if (rows.length < 2) return match;
-    
+
     let tableHtml = '<table>';
-    
+
     // Header row
     const headerCells = rows[0].split('|').filter(c => c.trim());
     tableHtml += '<thead><tr>';
@@ -106,7 +122,7 @@ function parseMarkdown(content: string): string {
       tableHtml += `<th>${cell.trim()}</th>`;
     }
     tableHtml += '</tr></thead>';
-    
+
     // Body rows (skip separator)
     tableHtml += '<tbody>';
     for (let i = 2; i < rows.length; i++) {
@@ -118,25 +134,25 @@ function parseMarkdown(content: string): string {
       tableHtml += '</tr>';
     }
     tableHtml += '</tbody></table>';
-    
+
     return tableHtml;
   });
-  
+
   // Bullet points
   html = html.replace(/^• (.+)$/gm, '<li>$1</li>');
   html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
   html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
-  
+
   // Wrap consecutive <li> elements in <ul>
   html = html.replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>');
-  
+
   // Line breaks
   html = html.replace(/\n\n/g, '</p><p>');
   html = html.replace(/\n/g, '<br/>');
-  
+
   // Wrap in paragraph
   html = '<p>' + html + '</p>';
-  
+
   // Clean up
   html = html.replace(/<p><\/p>/g, '');
   html = html.replace(/<p><br\/>/g, '<p>');
@@ -149,16 +165,16 @@ function parseMarkdown(content: string): string {
   html = html.replace(/(<\/table>)<\/p>/g, '$1');
   html = html.replace(/<p>(<ul>)/g, '$1');
   html = html.replace(/(<\/ul>)<\/p>/g, '$1');
-  
+
   return html;
 }
 
 // Render markdown formatted response
 function MarkdownResponse({ content }: { content: string }) {
   const html = useMemo(() => parseMarkdown(content), [content]);
-  
+
   return (
-    <div 
+    <div
       className="markdown-content"
       dangerouslySetInnerHTML={{ __html: html }}
     />
@@ -180,46 +196,46 @@ function isDeepExploreResponse(content: string): boolean {
 function parseDeepExploreResponse(content: string): Section[] {
   const sections: Section[] = [];
   const parts = content.split(/(?=## )/g);
-  
+
   for (const part of parts) {
     const trimmed = part.trim();
     if (!trimmed) continue;
-    
+
     const match = trimmed.match(/^##\s*(.+?)(?:\n|$)([\s\S]*)$/);
     if (match) {
       const title = match[1].trim();
       let sectionContent = match[2].trim();
       sectionContent = sectionContent.replace(/^##\s*.+$/gm, '').trim();
-      
+
       const icon = sectionIcons[title] || "📄";
       const isSpecial = title === "Exam Relevance" || title === "Common Confusions";
-      
+
       sections.push({ title, content: sectionContent, icon, isSpecial });
     } else if (sections.length === 0 && !trimmed.startsWith("##")) {
       sections.push({ title: "Introduction", content: trimmed, icon: "📖" });
     }
   }
-  
+
   return sections;
 }
 
 function DeepExploreResponse({ content }: { content: string }) {
   const sections = useMemo(() => parseDeepExploreResponse(content), [content]);
-  
+
   return (
     <div className="deep-explore-response">
       {sections.map((section, index) => (
-        <div 
-          key={index} 
+        <div
+          key={index}
           className={`deep-explore-section ${section.isSpecial ? section.title === "Exam Relevance" ? "exam-relevance" : "common-confusions" : ""}`}
         >
           <div className="deep-explore-section-header">
             <span>{section.icon}</span>
             <span>{section.title}</span>
           </div>
-          <div 
+          <div
             className="deep-explore-section-content"
-            dangerouslySetInnerHTML={{ 
+            dangerouslySetInnerHTML={{
               __html: parseMarkdown(section.content)
             }}
           />
@@ -230,10 +246,10 @@ function DeepExploreResponse({ content }: { content: string }) {
 }
 
 const quickActions = [
+  { label: "Build an exam prompt", emoji: "🎯" },
   { label: "Explain this concept", emoji: "💡" },
+  { label: "ELI5 this paper", emoji: "👶" },
   { label: "Create a quiz", emoji: "✏️" },
-  { label: "Generate flashcards", emoji: "🗂️" },
-  { label: "Summarize this", emoji: "📝" },
 ];
 
 export default function ChatPanel({ activeMode, documents = [], onRequestUpload, onClearDocuments, onDocumentsChange }: ChatPanelProps) {
@@ -253,6 +269,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
   const [showPastChats, setShowPastChats] = useState(false);
   const [showAllChats, setShowAllChats] = useState(false);
   const [showDocList, setShowDocList] = useState(false);
+  const [expandedTopics, setExpandedTopics] = useState<Record<string, TopicExpansion | any>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Fetch past chats on mount
@@ -279,7 +296,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
 
     setSessionId(selectedSessionId);
     setShowPastChats(false);
-    
+
     // Show loading state
     setMessages([
       {
@@ -289,11 +306,11 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
         timestamp: new Date(),
       },
     ]);
-    
+
     try {
       const response = await fetch(`/api/chat/history?sessionId=${encodeURIComponent(selectedSessionId)}`);
       const data = await response.json();
-      
+
       if (data.success && data.messages && data.messages.length > 0) {
         const loadedMessages: Message[] = data.messages.map((msg: any) => ({
           id: msg.id,
@@ -301,7 +318,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
           content: msg.content,
           timestamp: new Date(msg.createdAt),
         }));
-        
+
         setMessages(loadedMessages);
       } else {
         setMessages([
@@ -326,6 +343,44 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
     }
   };
 
+  const handleExpandTopic = useCallback(async (topic: RoadmapTopic, subject: string) => {
+    if (expandedTopics[topic.id] && !(expandedTopics[topic.id] as any)?.loading) return;
+
+    setExpandedTopics((prev) => ({
+      ...prev,
+      [topic.id]: { loading: true },
+    }));
+
+    try {
+      const res = await fetch("/api/copilot/expand", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic,
+          subject: subject,
+          university: "",
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExpandedTopics((prev) => ({
+          ...prev,
+          [topic.id]: data.expansion,
+        }));
+      } else {
+        setExpandedTopics((prev) => ({
+          ...prev,
+          [topic.id]: { _failed: true },
+        }));
+      }
+    } catch (err) {
+      setExpandedTopics((prev) => ({
+        ...prev,
+        [topic.id]: { _failed: true },
+      }));
+    }
+  }, [expandedTopics]);
+
   // Format date for display
   const formatChatDate = (dateString: string) => {
     try {
@@ -333,19 +388,19 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
       const now = new Date();
       const dateStr = date.toDateString();
       const nowStr = now.toDateString();
-      
+
       if (dateStr === nowStr) return "Today";
-      
+
       const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       if (dateStr === yesterday.toDateString()) return "Yesterday";
-      
+
       const diffTime = now.getTime() - date.getTime();
       const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
       if (diffDays < 7) {
         return date.toLocaleDateString("en-US", { weekday: "short" });
       }
-      
+
       return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
     } catch {
       return dateString;
@@ -372,15 +427,17 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
     setInputValue("");
     setIsLoading(true);
 
+    const isELI5 = messageText.toLowerCase().includes("eli5");
+
     try {
       const response = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          message: userMessage.content, 
+        body: JSON.stringify({
+          message: isELI5 ? `ELI5: ${messageText.replace(/eli5/i, "").trim()}` : messageText,
           mode: activeMode,
           useRag: true,
-          sessionId: sessionId || undefined 
+          sessionId: sessionId || undefined
         }),
       });
 
@@ -407,6 +464,10 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
         timestamp: new Date(),
         sources: responseSources.length > 0 ? responseSources : undefined,
         hasDocuments: data.hasDocuments,
+        toolResult: data.toolResult ? {
+          ...data.toolResult,
+          data: data.toolResult.data
+        } : undefined,
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
@@ -463,10 +524,10 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
               <span className="doc-badge-label">docs loaded</span>
             </div>
           )}
-          <button 
+          <button
             className="new-chat-btn"
-              onClick={async () => {
-                if (onClearDocuments) await onClearDocuments();
+            onClick={async () => {
+              if (onClearDocuments) await onClearDocuments();
               setMessages([
                 {
                   id: "welcome",
@@ -483,7 +544,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
             ✨ New Chat
           </button>
           <div className="past-chats-dropdown">
-            <button 
+            <button
               className="past-chats-btn"
               onClick={() => setShowPastChats(!showPastChats)}
               title="View past chats"
@@ -514,7 +575,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
                         </div>
                       ))}
                       {pastChats.length > 3 && (
-                        <button 
+                        <button
                           className="show-more-btn"
                           onClick={() => setShowAllChats(!showAllChats)}
                         >
@@ -550,10 +611,10 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
                       try {
                         const resp = await fetch(`/api/documents?id=${encodeURIComponent(doc.id)}`, { method: 'DELETE' });
                         if (resp.ok) {
-                          const updated = documents.filter(d=>d.id!==doc.id);
+                          const updated = documents.filter(d => d.id !== doc.id);
                           onDocumentsChange?.(updated);
                         }
-                      } catch(err) {
+                      } catch (err) {
                         console.error('delete doc', err);
                       }
                     }}
@@ -573,9 +634,9 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
             <div className="welcome-icon">🧠</div>
             <h3 className="welcome-title">AI Academic Strategist</h3>
             <p className="welcome-subtitle">
-              {activeMode === "study" 
-                ? "I'll help you study smarter with exam-focused insights" 
-                : "I'll help you explore topics in depth with structured research"}
+              {activeMode === "study"
+                ? "Generate study roadmaps, build exam prompts, or ask academic questions."
+                : "I'll help you explore topics in depth with structured research."}
             </p>
             <div className="quick-actions">
               {quickActions.map((action, i) => (
@@ -592,26 +653,66 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
               className={`message ${message.role === "user" ? "user-message" : "bot-message"} ${shouldRenderDeepExplore(message) ? "deep-explore-mode" : ""}`}
             >
               <div className="message-avatar">
-                {message.role === "user" ? "👤" : "✨"}
+                {message.role === "user" ? "U" : "AI"}
               </div>
               <div className="message-content">
+                {message.toolResult && (
+                  <div className="tool-result-badge" style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    padding: '4px 12px',
+                    marginBottom: '8px',
+                    borderRadius: '20px',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    background: message.toolResult.error
+                      ? 'rgba(239, 68, 68, 0.15)'
+                      : 'rgba(99, 102, 241, 0.15)',
+                    color: message.toolResult.error
+                      ? '#f87171'
+                      : '#818cf8',
+                    border: `1px solid ${message.toolResult.error ? 'rgba(239, 68, 68, 0.3)' : 'rgba(99, 102, 241, 0.3)'}`,
+                  }}>
+                    <span>{message.toolResult.emoji}</span>
+                    <span>{message.toolResult.label}</span>
+                  </div>
+                )}
                 {shouldRenderDeepExplore(message) ? (
                   <DeepExploreResponse content={message.content} />
                 ) : (
                   <MarkdownResponse content={message.content} />
                 )}
+
+                {/* Rich Tool Widgets */}
+                {message.toolResult?.tool === "generate_roadmap" && message.toolResult.data?.roadmap && (
+                  <RoadmapTree
+                    roadmap={message.toolResult.data.roadmap}
+                    expandedTopics={expandedTopics}
+                    onExpand={(topic) => handleExpandTopic(topic, message.toolResult?.data?.syllabus?.subject || "Subject")}
+                  />
+                )}
+
+                {message.toolResult?.tool === "build_exam_prompt" && message.toolResult.data?.prompt && (
+                  <PromptBlock
+                    prompt={message.toolResult.data.prompt}
+                    topic={message.toolResult.data.topic}
+                    onUse={(p) => setInputValue(p)}
+                  />
+                )}
+
                 {/* Source Citations */}
                 {message.sources && message.sources.length > 0 && (() => {
                   // group by documentName
-                  const groups: Record<string, Array<{chunkIndex:number;score:number}>> = {};
+                  const groups: Record<string, Array<{ chunkIndex: number; score: number }>> = {};
                   message.sources.forEach(s => {
                     const name = s.documentName.replace(/\s+\(\d+\)/g, '') // remove trailing (1) etc
-                                         .replace(/\(SPECIAL\)/i,'')
-                                         .trim();
+                      .replace(/\(SPECIAL\)/i, '')
+                      .trim();
                     if (!groups[name]) groups[name] = [];
                     // avoid duplicates
                     if (!groups[name].some(c => c.chunkIndex === s.chunkIndex)) {
-                      groups[name].push({chunkIndex: s.chunkIndex, score: s.score});
+                      groups[name].push({ chunkIndex: s.chunkIndex, score: s.score });
                     }
                   });
                   const docNames = Object.keys(groups);
@@ -647,7 +748,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
             </div>
           ))
         )}
-        
+
         {isLoading && (
           <div className="message bot-message">
             <div className="message-avatar">✨</div>
@@ -660,25 +761,24 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
             </div>
           </div>
         )}
-        
+
         <div ref={messagesEndRef} />
       </div>
 
       <div className="chat-input-container">
         <div className="chat-input-wrapper">
-          {/* Attach file button */}
           <button
             className="attach-btn"
             onClick={() => onRequestUpload?.()}
             title="Upload documents for Q&A"
             type="button"
           >
-            📎
+            <span style={{ fontSize: '1.2rem', opacity: 0.7 }}>⊕</span>
           </button>
           <input
             type="text"
             className="chat-input"
-            placeholder={documents.length > 0 ? `Ask about your ${documents.filter(d => d.status === "ready").length} uploaded doc(s)...` : content.placeholder}
+            placeholder={documents && documents.length > 0 ? `Ask about your ${documents.filter(d => d.status === "ready").length} uploaded doc(s)...` : content.placeholder}
             value={inputValue}
             onChange={(e) => setInputValue(e.target.value)}
             onKeyDown={handleKeyPress}
@@ -696,5 +796,3 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
     </div>
   );
 }
-
-

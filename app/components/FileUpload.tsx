@@ -15,6 +15,7 @@ interface Document {
 
 interface FileUploadProps {
   onDocumentsChange?: (documents: Document[]) => void;
+  onGenerateStudyMaterial?: (docId: string, type: 'quiz' | 'flashcards') => void;
 }
 
 const ALLOWED_TYPES = [
@@ -28,7 +29,7 @@ const ALLOWED_TYPES = [
 const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".md", ".csv"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 
-export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
+export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial }: FileUploadProps) {
   const [documents, setDocuments] = useState<Document[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -276,9 +277,8 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
     <div className="file-upload-container">
       {/* Upload Area */}
       <div
-        className={`upload-area ${isDragging ? "dragging" : ""} ${
-          isUploading ? "uploading" : ""
-        }`}
+        className={`upload-area ${isDragging ? "dragging" : ""} ${isUploading ? "uploading" : ""
+          }`}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -369,8 +369,8 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
                     {doc.status === "ready" && doc.chunkCount !== undefined
                       ? `${doc.chunkCount} chunks`
                       : doc.status === "processing"
-                      ? "Processing document..."
-                      : doc.error || "Error"}
+                        ? "Processing document..."
+                        : doc.error || "Error"}
                     {doc.size && ` • ${formatFileSize(doc.size)}`}
                   </span>
                   {/* Progress bar for processing documents */}
@@ -384,6 +384,23 @@ export default function FileUpload({ onDocumentsChange }: FileUploadProps) {
                     </div>
                   )}
                 </div>
+
+                {doc.status === "ready" && onGenerateStudyMaterial && (
+                  <div className="flex gap-2 mr-2">
+                    <button
+                      className="text-xs bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded font-medium transition-colors"
+                      onClick={(e) => { e.stopPropagation(); onGenerateStudyMaterial(doc.id, 'quiz'); }}
+                    >
+                      Quiz
+                    </button>
+                    <button
+                      className="text-xs bg-primary/10 hover:bg-primary/20 text-primary px-3 py-1.5 rounded font-medium transition-colors"
+                      onClick={(e) => { e.stopPropagation(); onGenerateStudyMaterial(doc.id, 'flashcards'); }}
+                    >
+                      Cards
+                    </button>
+                  </div>
+                )}
 
                 {doc.status !== "processing" && (
                   <button

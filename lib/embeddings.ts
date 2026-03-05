@@ -4,6 +4,7 @@
  * Uses Groq API for fast embeddings (free tier available)
  * Fallback to Ollama if needed
  */
+import { groqKeyManager } from "./groq-key-manager";
 
 export interface Embedding {
   id: string;
@@ -24,45 +25,64 @@ const MAX_CACHE_SIZE = 2000;
  * Generate embeddings using Groq API (FAST)
  */
 async function generateWithGroq(
-  texts: string[],
-  apiKey: string
+  texts: string[]
 ): Promise<number[][]> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+  const maxRetries = 3;
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    const apiKey = groqKeyManager.getCurrentKey();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30s timeout
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/embeddings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: "text-embedding-3-small",
+          input: texts,
+        }),
+        signal: controller.signal,
+      });
 
-  try {
-    const response = await fetch("https://api.groq.com/openai/v1/embeddings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "text-embedding-3-small",
-        input: texts,
-      }),
-      signal: controller.signal,
-    });
+      clearTimeout(timeoutId);
 
-    clearTimeout(timeoutId);
+      if (!response.ok) {
+        if (response.status === 429) {
+          // Rate limit – rotate key and retry
+          console.warn(`[Embeddings] Groq rate limit hit (429). Rotating key and retrying (attempt ${attempt + 1})`);
+          groqKeyManager.rotateKey();
+          attempt++;
+          continue;
+        }
+        const error = await response.json().catch(() => ({}));
+        throw new Error(`Groq embedding error: ${error.error?.message || response.statusText}`);
+      }
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(`Groq embedding error: ${error.error?.message || response.statusText}`);
+      const data = await response.json();
+      return data.data
+        .sort((a: { index: number }, b: { index: number }) => a.index - b.index)
+        .map((item: { embedding: number[] }) => item.embedding);
+    } catch (error) {
+      clearTimeout(timeoutId);
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw new Error('Groq API request timed out');
+      }
+      // If it's a 429 from fetch throwing, handle similarly
+      if (error && typeof (error as any).status === 'number' && (error as any).status === 429) {
+        console.warn(`[Embeddings] Groq rate limit error caught. Rotating key and retrying (attempt ${attempt + 1})`);
+        groqKeyManager.rotateKey();
+        attempt++;
+        continue;
+      }
+      throw error;
     }
-
-    const data = await response.json();
-    return data.data
-      .sort((a: any, b: any) => a.index - b.index)
-      .map((item: any) => item.embedding);
-  } catch (error) {
-    clearTimeout(timeoutId);
-    if (error instanceof Error && error.name === 'AbortError') {
-      throw new Error('Groq API request timed out');
-    }
-    throw error;
   }
+  throw new Error('Groq embedding failed after maximum retries due to rate limiting');
 }
+
 
 /**
  * Generate embeddings using Ollama (SLOW - fallback)
@@ -157,7 +177,7 @@ export async function generateEmbeddings(
   if (apiKey && apiKey.length > 10) {
     try {
       console.log(`[Embeddings] Using Groq for ${uncachedTexts.length} texts`);
-      embeddings = await generateWithGroq(uncachedTexts, apiKey);
+      embeddings = await generateWithGroq(uncachedTexts);
 
       // Cache new embeddings
       let embIndex = 0;
@@ -209,7 +229,7 @@ export async function generateEmbeddings(
   console.log("[Embeddings] Using simple hash-based embeddings (testing mode)");
   try {
     embeddings = uncachedTexts.map(text => generateSimpleEmbedding(text));
-    
+
     // Cache new embeddings
     let embIndex = 0;
     for (let i = 0; i < texts.length; i++) {
@@ -229,10 +249,10 @@ export async function generateEmbeddings(
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown embedding error';
     console.error("[Embeddings] All methods failed:", errorMessage);
-    return { 
-      success: false, 
+    return {
+      success: false,
       embeddings: cachedResults,
-      error: `Embedding generation failed: ${errorMessage}` 
+      error: `Embedding generation failed: ${errorMessage}`
     };
   }
 }
@@ -244,7 +264,7 @@ export async function generateEmbeddings(
 function generateSimpleEmbedding(text: string): number[] {
   const dimensions = 1536; // Match OpenAI/Groq embedding size
   const embedding = new Array(dimensions).fill(0);
-  
+
   // Create a simple hash of the text
   let hash = 0;
   for (let i = 0; i < text.length; i++) {
@@ -252,16 +272,16 @@ function generateSimpleEmbedding(text: string): number[] {
     hash = ((hash << 5) - hash) + char;
     hash = hash & hash; // Convert to 32-bit integer
   }
-  
+
   // Use hash to seed pseudo-random values
   const seed = Math.abs(hash);
   let randomState = seed;
-  
+
   const nextRandom = () => {
     randomState = (randomState * 1103515245 + 12345) & 0x7fffffff;
     return randomState / 0x7fffffff;
   };
-  
+
   // Generate normalized embedding using text content influence
   for (let i = 0; i < dimensions; i++) {
     // Mix hash with position and character values
@@ -269,7 +289,7 @@ function generateSimpleEmbedding(text: string): number[] {
     const positionFactor = Math.sin(i * 0.1) * 0.3;
     embedding[i] = (nextRandom() + charCode / 127.0 + positionFactor) * 0.5;
   }
-  
+
   // Normalize to unit vector
   const magnitude = Math.sqrt(embedding.reduce((sum, val) => sum + val * val, 0));
   if (magnitude > 0) {
@@ -277,7 +297,7 @@ function generateSimpleEmbedding(text: string): number[] {
       embedding[i] /= magnitude;
     }
   }
-  
+
   return embedding;
 }
 
@@ -303,7 +323,7 @@ export async function generateEmbedding(
   // Try Groq first
   if (apiKey && apiKey.length > 10) {
     try {
-      const results = await generateWithGroq([text], apiKey);
+      const results = await generateWithGroq([text]);
       const embedding = results[0];
       embeddingCache.set(cacheKey, embedding);
       return embedding;

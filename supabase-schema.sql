@@ -251,3 +251,20 @@ CREATE TRIGGER update_documents_updated_at
   FOR EACH ROW
   EXECUTE FUNCTION update_updated_at_column();
 
+-- =============================================
+-- SPACED REPETITION SYSTEM (SRS)
+-- =============================================
+
+CREATE TABLE IF NOT EXISTS srs_items (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  user_id TEXT NOT NULL,
+  topic_id TEXT NOT NULL,
+  topic_name TEXT NOT NULL,
+  interval INTEGER DEFAULT 1,          -- Days until next review
+  repetition INTEGER DEFAULT 0,        -- Number of times reviewed
+  ease_factor FLOAT DEFAULT 2.5,       -- SM-2 ease factor
+  next_review_date TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_srs_next_review ON srs_items(user_id, next_review_date);
+

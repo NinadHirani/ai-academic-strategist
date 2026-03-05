@@ -138,7 +138,7 @@ export default function CopilotPage() {
         const errorMsg = err.name === "AbortError"
           ? "Request timed out. Click the topic again to retry."
           : `Network error: ${err.message}. Click the topic again to retry.`;
-        
+
         setState((s) => ({
           ...s,
           expandedTopics: {
@@ -162,111 +162,194 @@ export default function CopilotPage() {
     [state.expandedTopics, state.syllabus, state.query]
   );
 
+  // ---- Build a practical project ----
+  const [activeProject, setActiveProject] = useState<any>(null);
+  const [isGeneratingProject, setIsGeneratingProject] = useState(false);
+
+  const handleGenerateProject = useCallback(async (topicName: string) => {
+    setIsGeneratingProject(true);
+    setActiveProject(null);
+    try {
+      const res = await fetch("/api/copilot/project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topicName, subject: state.syllabus?.subject || "" }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setActiveProject(data.project);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsGeneratingProject(false);
+    }
+  }, [state.syllabus]);
+
   const isLoading = state.step === "searching" || state.step === "parsing" || state.step === "roadmap";
 
   return (
-    <div className="app-container">
-      {/* Header */}
-      <header className="header">
-        <div className="header-content copilot-max-width">
-          <div className="logo">
-            <span className="logo-icon">🎓</span>
-            <span className="logo-text">AI Academic Copilot</span>
-            <span className="logo-badge copilot-badge-green">
-              Smart Syllabus
-            </span>
-          </div>
-          <nav className="nav-links">
-            <a href="/" className="nav-link">← Study AI</a>
-            <a href="/sandbox" className="nav-link">🧪 Prompt Builder</a>
-          </nav>
-        </div>
-      </header>
+    <main className="main-content container-premium section-spacing">
+      {/* Hero + Search */}
+      <div className="hero-section copilot-hero-pb">
+        <h1 className="hero-title copilot-hero-title">
+          AI Academic Copilot
+        </h1>
+        <p className="hero-subtitle copilot-hero-subtitle">
+          Enter a subject query like <strong>&quot;TOC, Semester 6, GTU&quot;</strong> — the system will find the official syllabus,
+          build a study roadmap, and let you deep-dive into each topic with real resources.
+        </p>
+      </div>
 
-      <main className="main-content copilot-max-width">
-        {/* Hero + Search */}
-        <div className="hero-section copilot-hero-pb">
-          <h1 className="hero-title copilot-hero-title">
-            AI Academic Copilot
-          </h1>
-          <p className="hero-subtitle copilot-hero-subtitle">
-            Enter a subject query like <strong>&quot;TOC, Semester 6, GTU&quot;</strong> — the system will find the official syllabus,
-            build a study roadmap, and let you deep-dive into each topic with real resources.
+
+      {/* Search Bar */}
+      <div className="copilot-search-bar">
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          placeholder="e.g., TOC, Semester 6, GTU"
+          className="copilot-search-input"
+          disabled={isLoading}
+        />
+        <button
+          onClick={handleSearch}
+          disabled={isLoading || !query.trim()}
+          className="copilot-search-btn"
+        >
+          {isLoading ? (
+            <span className="copilot-spinner" />
+          ) : (
+            "🔍 Search & Build Roadmap"
+          )}
+        </button>
+      </div>
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="copilot-loading">
+          <div className="copilot-loading-bar" />
+          <p className="copilot-loading-text">
+            {state.step === "searching" && "🔎 Analyzing your query and generating syllabus from academic knowledge..."}
+            {state.step === "parsing" && "📄 Structuring syllabus into units, topics and subtopics..."}
+            {state.step === "roadmap" && "🗺️ Building personalized study roadmap..."}
+          </p>
+          <p className="copilot-loading-hint">
+            This may take 15-30 seconds — generating comprehensive syllabus data
           </p>
         </div>
+      )}
 
-        {/* Search Bar */}
-        <div className="copilot-search-bar">
-          <input
-            type="text"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-            placeholder="e.g., TOC, Semester 6, GTU"
-            className="copilot-search-input"
-            disabled={isLoading}
-          />
-          <button
-            onClick={handleSearch}
-            disabled={isLoading || !query.trim()}
-            className="copilot-search-btn"
-          >
-            {isLoading ? (
-              <span className="copilot-spinner" />
-            ) : (
-              "🔍 Search & Build Roadmap"
-            )}
-          </button>
+      {/* Error */}
+      {state.step === "error" && (
+        <div className="copilot-error">
+          <span>❌</span>
+          <div>
+            <strong>Something went wrong</strong>
+            <p>{state.error}</p>
+          </div>
         </div>
+      )}
 
-        {/* Loading State */}
-        {isLoading && (
-          <div className="copilot-loading">
-            <div className="copilot-loading-bar" />
-            <p className="copilot-loading-text">
-              {state.step === "searching" && "🔎 Analyzing your query and generating syllabus from academic knowledge..."}
-              {state.step === "parsing" && "📄 Structuring syllabus into units, topics and subtopics..."}
-              {state.step === "roadmap" && "🗺️ Building personalized study roadmap..."}
-            </p>
-            <p className="copilot-loading-hint">
-              This may take 15-30 seconds — generating comprehensive syllabus data
-            </p>
+      {/* Syllabus Info */}
+      {state.syllabus && state.step === "done" && (
+        <SyllabusHeader syllabus={state.syllabus} roadmap={state.roadmap!} />
+      )}
+
+      {/* Roadmap Tree */}
+      {state.roadmap && state.step === "done" && (
+        <RoadmapTree
+          roadmap={state.roadmap}
+          expandedTopics={state.expandedTopics}
+          onExpand={handleExpand}
+          onGenerateProject={handleGenerateProject}
+        />
+      )}
+
+      {/* Project Modal */}
+      {(isGeneratingProject || activeProject) && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-card border shadow-2xl max-w-2xl w-full rounded-2xl p-8 relative animate-in zoom-in duration-300">
+            <button
+              onClick={() => { setActiveProject(null); setIsGeneratingProject(false); }}
+              className="absolute top-4 right-4 text-muted-foreground hover:text-foreground p-2"
+            >✕</button>
+
+            {isGeneratingProject ? (
+              <div className="py-12 flex flex-col items-center">
+                <div className="animate-spin w-12 h-12 border-4 border-primary border-t-transparent rounded-full mb-6"></div>
+                <h3 className="text-xl font-bold">Designing Your Project...</h3>
+                <p className="text-muted-foreground text-center mt-2">
+                  We're mapping theoretical concepts to a hands-on technical challenge.
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-3xl font-bold">🛠️</span>
+                  <div>
+                    <h2 className="text-2xl font-bold">{activeProject.title}</h2>
+                    <div className="flex gap-2 mt-1">
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary px-2 py-0.5 rounded">
+                        {activeProject.difficulty}
+                      </span>
+                      <span className="text-[10px] font-bold uppercase tracking-wider bg-muted text-muted-foreground px-2 py-0.5 rounded">
+                        {activeProject.estimatedHours} Hours
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <p className="text-muted-foreground leading-relaxed">
+                  {activeProject.description}
+                </p>
+
+                <div className="grid grid-cols-2 gap-6">
+                  <div>
+                    <h4 className="font-bold text-sm mb-3 uppercase tracking-wider text-primary">Tech Stack</h4>
+                    <div className="flex flex-wrap gap-1.5">
+                      {activeProject.techStack.map((s: string) => (
+                        <span key={s} className="text-xs bg-muted px-2 py-1 rounded border">{s}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-sm mb-3 uppercase tracking-wider text-primary">Key Learning</h4>
+                    <ul className="text-xs space-y-1 text-muted-foreground">
+                      {activeProject.learningObjectives.map((o: string) => (
+                        <li key={o}>• {o}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+
+                <div className="pt-4 border-t">
+                  <h4 className="font-bold text-sm mb-4 uppercase tracking-wider text-primary">Implementation Steps</h4>
+                  <div className="space-y-3">
+                    {activeProject.steps.map((step: string, i: number) => (
+                      <div key={i} className="flex gap-3 items-start">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-[10px] font-bold mt-0.5">
+                          {i + 1}
+                        </span>
+                        <p className="text-sm">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Error */}
-        {state.step === "error" && (
-          <div className="copilot-error">
-            <span>❌</span>
-            <div>
-              <strong>Something went wrong</strong>
-              <p>{state.error}</p>
-            </div>
-          </div>
+      {/* Schedule */}
+      {state.roadmap &&
+        state.roadmap.suggestedSchedule.length > 0 &&
+        state.step === "done" && (
+          <ScheduleView roadmap={state.roadmap} />
         )}
-
-        {/* Syllabus Info */}
-        {state.syllabus && state.step === "done" && (
-          <SyllabusHeader syllabus={state.syllabus} roadmap={state.roadmap!} />
-        )}
-
-        {/* Roadmap Tree */}
-        {state.roadmap && state.step === "done" && (
-          <RoadmapTree
-            roadmap={state.roadmap}
-            expandedTopics={state.expandedTopics}
-            onExpand={handleExpand}
-          />
-        )}
-
-        {/* Schedule */}
-        {state.roadmap &&
-          state.roadmap.suggestedSchedule.length > 0 &&
-          state.step === "done" && (
-            <ScheduleView roadmap={state.roadmap} />
-          )}
-      </main>
-    </div>
+    </main>
   );
 }
 
@@ -328,10 +411,12 @@ function RoadmapTree({
   roadmap,
   expandedTopics,
   onExpand,
+  onGenerateProject,
 }: {
   roadmap: StudyRoadmap;
   expandedTopics: Record<string, TopicExpansion | any>;
   onExpand: (topic: RoadmapTopic) => void;
+  onGenerateProject?: (topicName: string) => void;
 }) {
   const [openUnits, setOpenUnits] = useState<Set<string>>(
     new Set(roadmap.units.map((u) => u.id))
@@ -358,6 +443,7 @@ function RoadmapTree({
             onToggle={() => toggleUnit(unit.id)}
             expandedTopics={expandedTopics}
             onExpand={onExpand}
+            onGenerateProject={onGenerateProject}
           />
         ))}
       </div>
@@ -371,12 +457,14 @@ function UnitNode({
   onToggle,
   expandedTopics,
   onExpand,
+  onGenerateProject,
 }: {
   unit: RoadmapUnit;
   isOpen: boolean;
   onToggle: () => void;
   expandedTopics: Record<string, TopicExpansion | any>;
   onExpand: (topic: RoadmapTopic) => void;
+  onGenerateProject?: (topicName: string) => void;
 }) {
   const hours = Math.round(unit.totalEstimatedMinutes / 60 * 10) / 10;
 
@@ -400,6 +488,7 @@ function UnitNode({
                 topic={topic}
                 expansion={expandedTopics[topic.id]}
                 onExpand={() => onExpand(topic)}
+                onGenerateProject={onGenerateProject}
               />
             ))}
         </div>
@@ -412,10 +501,12 @@ function TopicNode({
   topic,
   expansion,
   onExpand,
+  onGenerateProject,
 }: {
   topic: RoadmapTopic;
   expansion?: TopicExpansion | any;
   onExpand: () => void;
+  onGenerateProject?: (topicName: string) => void;
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const isLoading = expansion?.loading === true;
@@ -479,8 +570,10 @@ function TopicNode({
           )}
 
           {/* Expanded Content */}
-          {hasExpansion && !hasFailed && <TopicExpansionView expansion={expansion} />}
-          
+          {hasExpansion && !hasFailed && (
+            <TopicExpansionView expansion={expansion} onGenerateProject={onGenerateProject} />
+          )}
+
           {/* Failed State */}
           {hasFailed && (
             <div className="copilot-topic-error">
@@ -500,7 +593,7 @@ function TopicNode({
 // Topic Expansion View
 // ============================================================================
 
-function TopicExpansionView({ expansion }: { expansion: TopicExpansion }) {
+function TopicExpansionView({ expansion, onGenerateProject }: { expansion: TopicExpansion, onGenerateProject?: (topicName: string) => void }) {
   const [activeTab, setActiveTab] = useState<"overview" | "resources" | "exam">("overview");
 
   return (
@@ -517,6 +610,15 @@ function TopicExpansionView({ expansion }: { expansion: TopicExpansion }) {
             {tab === "exam" && "📝 Exam Patterns"}
           </button>
         ))}
+        {onGenerateProject && (
+          <button
+            onClick={() => onGenerateProject(expansion.topicName)}
+            className="copilot-exp-tab project-btn"
+            style={{ marginLeft: 'auto', background: 'rgba(99, 102, 241, 0.1)', color: '#818cf8', fontWeight: 'bold' }}
+          >
+            🛠️ Build Project
+          </button>
+        )}
       </div>
 
       {activeTab === "overview" && (

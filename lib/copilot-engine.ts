@@ -16,6 +16,8 @@ import type {
   WebResource,
   ScheduleBlock,
 } from "./copilot-types";
+import { groqKeyManager } from "./groq-key-manager";
+
 
 // ============================================================================
 // Configuration
@@ -113,7 +115,7 @@ async function searchWithTavily(
     }
 
     const data = await res.json();
-    return (data.results || []).map((r: any) => ({
+    return (data.results || []).map((r: { title?: string; url?: string; content?: string; raw_content?: string }) => ({
       title: r.title || "",
       url: r.url || "",
       snippet: r.content || r.raw_content?.slice(0, 500) || "",
@@ -148,7 +150,7 @@ async function searchWithSerpApi(
     if (!res.ok) throw new Error(`SerpAPI error: ${res.statusText}`);
 
     const data = await res.json();
-    return (data.organic_results || []).map((r: any) => ({
+    return (data.organic_results || []).map((r: { title?: string; link?: string; snippet?: string }) => ({
       title: r.title || "",
       url: r.link || "",
       snippet: r.snippet || "",
@@ -211,7 +213,7 @@ function parseQueryParts(query: string): {
   raw: string;
 } {
   const parts = query.split(/[,;]+/).map((p) => p.trim()).filter(Boolean);
-  
+
   // Try to identify each part
   let subject = "";
   let semester = "";
@@ -291,7 +293,7 @@ export async function searchSyllabus(query: string): Promise<{
   parsedQuery: ReturnType<typeof parseQueryParts>;
 }> {
   const parsedQuery = parseQueryParts(query);
-  
+
   // Build multiple targeted search queries for better coverage
   const queries = [
     `${parsedQuery.university} ${parsedQuery.subject} ${parsedQuery.semester} syllabus units topics`,
@@ -300,7 +302,7 @@ export async function searchSyllabus(query: string): Promise<{
   ].filter((q) => q.trim().length > 10);
 
   let allResults: SearchResult[] = [];
-  
+
   for (const q of queries) {
     try {
       const results = await searchWeb(q, 5);
@@ -357,13 +359,13 @@ export async function parseSyllabus(
   parsedQuery?: { subject: string; semester: string; university: string }
 ): Promise<ParsedSyllabus> {
   const pq = parsedQuery || parseQueryParts(query);
-  
+
   // Build web context if available (supplementary, not primary)
   const webContext = searchResults.length > 0
     ? searchResults
-        .slice(0, 10)
-        .map((r) => `Source: ${r.url}\nTitle: ${r.title}\nContent: ${r.snippet}`)
-        .join("\n---\n")
+      .slice(0, 10)
+      .map((r) => `Source: ${r.url}\nTitle: ${r.title}\nContent: ${r.snippet}`)
+      .join("\n---\n")
     : "";
 
   const systemPrompt = `You are an expert academic syllabus specialist with comprehensive knowledge of university curricula across India and worldwide.
@@ -507,7 +509,7 @@ JSON format:
 }`;
 
   const json = await callGroqJSON(systemPrompt, userPrompt);
-  
+
   let topicCount = 0;
   (json.units || []).forEach((unit: any, ui: number) => {
     unit.id = unit.id || `unit-${ui + 1}`;
@@ -817,67 +819,73 @@ async function callGroqJSON(
 
   let lastGroqError: string | null = null;
   for (const model of groqModels) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT);
+    const maxKeyRetries = groqKeyManager.keyCount;
+    let keyAttempt = 0;
 
-    try {
-      console.log(`[Copilot] Trying Groq model: ${model}`);
-      const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${groqKey}`,
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: systemPrompt },
-            { role: "user", content: userPrompt },
-          ],
-          temperature: 0.1,
-          max_tokens: 16000,
-          response_format: { type: "json_object" },
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
+    while (keyAttempt < maxKeyRetries) {
+      const groqKey = groqKeyManager.getCurrentKey();
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), LLM_TIMEOUT);
 
-      if (res.ok) {
-        const data = await res.json();
-        const content = data.choices?.[0]?.message?.content || "{}";
-        console.log(`[Copilot] Success with Groq model: ${model}`);
-        return parseJsonContent(content);
-      }
+      try {
+        console.log(`[Copilot] Trying Groq model: ${model} with key ${groqKeyManager.currentIndex + 1}`);
+        const res = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${groqKey}`,
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt },
+            ],
+            temperature: 0.1,
+            max_tokens: 16000,
+            response_format: { type: "json_object" },
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
 
-      const err = await res.json().catch(() => ({}));
-      lastGroqError = `Groq ${model} failed (${res.status}): ${err.error?.message || res.statusText}`;
+        if (res.ok) {
+          const data = await res.json();
+          const content = data.choices?.[0]?.message?.content || "{}";
+          console.log(`[Copilot] Success with Groq model: ${model}`);
+          return parseJsonContent(content);
+        }
 
-      // Rate-limited or quota exceeded → try next Groq model
-      if (res.status === 429 || res.status === 402 || res.status === 403) {
-        console.warn(`[Copilot] ${lastGroqError}. Trying next model...`);
-        continue;
+        const err = await res.json().catch(() => ({}));
+        lastGroqError = `Groq ${model} failed (${res.status}): ${err.error?.message || res.statusText}`;
+
+        // Rate-limited or quota exceeded → try next key
+        if (res.status === 429 || res.status === 402 || res.status === 403) {
+          console.warn(`[Copilot] ${lastGroqError}. Rotating key...`);
+          groqKeyManager.rotateKey();
+          keyAttempt++;
+          continue; // Try same model with next key
+        }
+
+        // Model not found or other non-rate-limit error → try next model
+        console.warn(`[Copilot] ${lastGroqError}`);
+        break; // Exit key loop to try next model
+      } catch (e: any) {
+        clearTimeout(timeout);
+        if (e.name === "AbortError") {
+          lastGroqError = `Groq ${model} timed out`;
+          console.warn(`[Copilot] ${lastGroqError}, trying next model...`);
+          break;
+        }
+        if (e instanceof SyntaxError) {
+          lastGroqError = `Groq ${model} returned invalid JSON`;
+          console.warn(`[Copilot] ${lastGroqError}, trying next model...`);
+          break;
+        }
+        lastGroqError = e?.message || String(e);
+        console.warn(`[Copilot] Groq ${model} error: ${lastGroqError}`);
+        break;
       }
-      // Model not found → skip
-      if (res.status === 404) {
-        console.warn(`[Copilot] Groq model ${model} not found, skipping`);
-        continue;
-      }
-      // Other error → still try next model
-      console.warn(`[Copilot] ${lastGroqError}`);
-    } catch (e: any) {
-      clearTimeout(timeout);
-      if (e.name === "AbortError") {
-        lastGroqError = `Groq ${model} timed out`;
-        console.warn(`[Copilot] ${lastGroqError}, trying next model...`);
-        continue;
-      }
-      if (e instanceof SyntaxError) {
-        lastGroqError = `Groq ${model} returned invalid JSON`;
-        console.warn(`[Copilot] ${lastGroqError}, trying next model...`);
-        continue;
-      }
-      lastGroqError = e?.message || String(e);
-      console.warn(`[Copilot] Groq ${model} error: ${lastGroqError}`);
     }
   }
 

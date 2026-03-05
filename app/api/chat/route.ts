@@ -3,8 +3,9 @@ import { retrieveContext, getDocumentsFromSupabase, RAGConfig, getStats } from "
 import { generateEmbedding } from "@/lib/embeddings";
 import { parseAcademicContext, getContextForPrompt, AcademicContext } from "@/lib/context-engine";
 import { getOrCreateSession, addMessage, getConversationContext, generateSessionTitle, updateSession, getSessionMessageCount, ChatMode } from "@/lib/chat-history";
-import { getStudentProfile, getWeakAreas, getStrongAreas } from "@/lib/student-memory";
+import { getStudentProfile, getWeakAreas, getStrongAreas, getLearningStats } from "@/lib/student-memory";
 import { getUserProfile, updateUserProfile, getProfileForPrompt, processAIResponseForFacts, extractFactsFromMessage } from "@/lib/user-profile-json";
+import { detectAndExecuteTool, ToolResult } from "@/lib/agent-router";
 import { Readable } from "stream";
 
 interface ChatRequestBody {
@@ -49,6 +50,14 @@ interface AcademicContextMetadata {
   confidence: number;
 }
 
+interface ToolResultPayload {
+  tool: string;
+  label: string;
+  emoji: string;
+  data?: any;
+  error?: string;
+}
+
 interface ChatResponse {
   message: string;
   mode: string;
@@ -56,6 +65,7 @@ interface ChatResponse {
   retrieval?: RetrievalMetadata;
   academicContext?: AcademicContextMetadata;
   sessionId?: string;
+  toolResult?: ToolResultPayload;
   error?: string;
 }
 
@@ -81,20 +91,20 @@ const MAX_CHAT_HISTORY_MESSAGES = 30;
 // === STRICT ACADEMIC EXPLANATION SYSTEM ===
 
 const SYSTEM_RESPONSE_GOVERNANCE = `
-You are an academic explanation engine. Your output must strictly follow these rules:
+You are an academic explanation engine.Your output must strictly follow these rules:
 
 GLOBAL RULES
-- Never generate or fabricate URLs.
+  - Never generate or fabricate URLs.
 - Never mention external links unless explicitly provided.
 - Do not invent references.
 - Assume references and videos will be attached separately by the system.
 - Focus only on explanation and structured academic clarity.
-- Maintain professional academic tone when the user asks a technical or subject-focused question.
+- Maintain professional academic tone when the user asks a technical or subject - focused question.
 - Do not introduce yourself as a tutor.
-- Do not ask follow-up questions at the end unless clarification is required.
+- Do not ask follow - up questions at the end unless clarification is required.
 
 GENERAL CONVERSATION GUIDELINES
-- When the user asks about how to use the system, about uploaded documents, or anything that is not a formal academic/technical query, switch to a simple, friendly conversational tone.
+  - When the user asks about how to use the system, about uploaded documents, or anything that is not a formal academic / technical query, switch to a simple, friendly conversational tone.
 - Respond as you would to a normal person or curious friend: clear, direct, and warm.
 - Avoid rigid academic formatting in casual interactions; keep sentences natural and easy to read.
 - You may paraphrase system usage instructions or document policies in plain language.
@@ -102,10 +112,10 @@ GENERAL CONVERSATION GUIDELINES
 GROUNDING RULE
 You are given:
 - Topic
-- Mode (Study or DeepExplore)
-- Student Level (optional)
-- Syllabus context (optional)
-- Search summaries (trusted external snippets)
+  - Mode(Study or DeepExplore)
+  - Student Level(optional)
+    - Syllabus context(optional)
+      - Search summaries(trusted external snippets)
 
 You must base your explanation on:
 1. Your internal knowledge
@@ -119,7 +129,7 @@ Never say:
 “I cannot access external documents.”
 “I cannot browse the internet.”
 
-MODE-SPECIFIC OUTPUT STRUCTURE
+MODE - SPECIFIC OUTPUT STRUCTURE
 
 If Mode = Study
 
@@ -129,24 +139,24 @@ Do NOT use rigid academic section headers.
 
 Write in a natural explanatory style, but format clearly using:
 
-- Short paragraphs (2–4 lines max)
-- Bold for important terms
-- Small informal headings when helpful
-- Bullet points for lists
-- Numbered steps for processes
-- Colon-style mini sections (e.g., "Why this matters:")
-- Tables when comparison improves clarity
-- Clean math equations when relevant
-- Light, meaningful emoji use (sparingly)
+- Short paragraphs(2–4 lines max)
+  - Bold for important terms
+    - Small informal headings when helpful
+      - Bullet points for lists
+        - Numbered steps for processes
+          - Colon - style mini sections(e.g., "Why this matters:")
+    - Tables when comparison improves clarity
+      - Clean math equations when relevant
+        - Light, meaningful emoji use(sparingly)
 
 Structure the explanation naturally in this flow:
 
 • Start by building intuition about the concept.
 • Introduce core ideas gradually.
-• Break down how it works (use steps if needed).
+• Break down how it works(use steps if needed).
 • Provide at least one concrete example.
-• Highlight common mistakes (⚠️).
-• End with a short exam-focused takeaway.
+• Highlight common mistakes(⚠️).
+• End with a short exam - focused takeaway.
 
 Formatting Guidelines:
 
@@ -166,7 +176,7 @@ Goal: Theoretical depth and academic rigor.
 Structure output EXACTLY as:
 
 Concept Overview
-High-level introduction.
+High - level introduction.
 
 Formal Definition
 Precise and technical definition.
@@ -178,10 +188,10 @@ Related Concepts
 Connections to adjacent topics.
 
 Advanced Insight
-Deeper reasoning, edge cases, or system-level implications.
+Deeper reasoning, edge cases, or system - level implications.
 
-Practical / System Applications
-Real-world or research applications.
+  Practical / System Applications
+Real - world or research applications.
 
 Avoid simplification unless Student_Level requires it.
 
@@ -189,29 +199,29 @@ PERSONALIZATION LAYER
 If Student_Level is provided:
 Beginner:
 - Simple vocabulary
-- Clear step transitions
-- Avoid heavy notation
+  - Clear step transitions
+    - Avoid heavy notation
 Intermediate:
 - Balanced clarity and technical depth
 Advanced:
 - Formal terminology
-- Mathematical notation where relevant
-- Academic rigor
+  - Mathematical notation where relevant
+    - Academic rigor
 Never intentionally degrade explanation quality.
 Adapt clarity, not correctness.
 
 OUTPUT RULES
-- Use clean section headers.
+  - Use clean section headers.
 - Use short, readable paragraphs.
 - Use bullet points only when helpful.
 - Avoid unnecessary emojis.
 - Avoid filler language.
 - No conversational fluff.
-- No tutor-style endings like:
-“What would you like to learn next?”
+- No tutor - style endings like:
+“What would you like to learn next ?”
 The output must feel like a structured academic article, not a chat reply.
 
-BACKEND SELF-CHECK (internal, not shown to user):
+BACKEND SELF - CHECK(internal, not shown to user):
 Before finalizing response:
 - Verify no URLs are present.
 - Verify required section headers exist.
@@ -221,36 +231,36 @@ Then output final answer.
 ARCHITECTURE LOGIC SUMMARY
 LLM handles:
 - Explanation
-- Structure
-- Academic reasoning
+  - Structure
+  - Academic reasoning
 Search API handles:
 - Real URLs
-- Video links
-- Reference credibility
+  - Video links
+    - Reference credibility
 Frontend handles:
 - Collapsible “Sources” button
-- Clean UI display
+  - Clean UI display
 Never merge responsibilities.
 `;
 const HUMAN_WRITING_GUIDELINES = `WRITING STYLE:
 - Write the way a knowledgeable, friendly human would explain things
-- Use varied sentence lengths - mix short punchy sentences with longer flowing ones
-- Start with the key insight first, then explain
-- Never use phrases like "As an AI language model", "I am an AI", or "As of my knowledge"
-- Avoid robotic transitions like "Furthermore", "Moreover", "Additionally", "In conclusion"
-- Use natural connectors like "Actually", "So", "The thing is", "Here's the deal"
-- Don't over-explain or state the obvious
-- Sound like a knowledgeable tutor, not a textbook
+  - Use varied sentence lengths - mix short punchy sentences with longer flowing ones
+    - Start with the key insight first, then explain
+      - Never use phrases like "As an AI language model", "I am an AI", or "As of my knowledge"
+        - Avoid robotic transitions like "Furthermore", "Moreover", "Additionally", "In conclusion"
+          - Use natural connectors like "Actually", "So", "The thing is", "Here's the deal"
+            - Don't over-explain or state the obvious
+              - Sound like a knowledgeable tutor, not a textbook
 
-*When the question is about using the system, uploaded files, or is otherwise informal, lean into normal conversational tone (think chat with a friend) and drop academic formality.*`;
+                * When the question is about using the system, uploaded files, or is otherwise informal, lean into normal conversational tone (think chat with a friend) and drop academic formality.* `;
 
 const OUTPUT_FORMATTING = `FORMATTING:
 - Use light formatting - <strong> for key terms, concepts students should remember
-- Break up long walls of text with short paragraphs (2-4 sentences each)
-- Use bullet points sparingly for steps or lists, but keep them concise
-- When listing things, prefer running prose over heavy bullet lists
-- Make code/examples clear with proper formatting
-- If something is important, say it directly - don't soft-pedal with "perhaps" or "might"`;
+  - Break up long walls of text with short paragraphs(2 - 4 sentences each)
+    - Use bullet points sparingly for steps or lists, but keep them concise
+      - When listing things, prefer running prose over heavy bullet lists
+        - Make code / examples clear with proper formatting
+          - If something is important, say it directly - don't soft-pedal with "perhaps" or "might"`;
 
 const AI_PATTERNS_TO_AVOID = `AVOID THESE AI PATTERNS:
 - Never start responses with "Sure!", "Certainly!", "Of course!" or similar fillers
@@ -452,7 +462,8 @@ function buildSystemPrompt(
   userProfile: UserProfile | null,
   academicContext: AcademicContext | null,
   syllabusContext: string | null,
-  contextString: string | null
+  contextString: string | null,
+  toolContext?: string | null
 ) {
   if (contextString) syllabusContext = contextString;
   let searchSummaries = "";
@@ -498,6 +509,13 @@ function buildSystemPrompt(
     "IMPORTANT: If reference material is provided above, use it as your primary source. Base your answer on those materials.",
     "If no reference material is provided, use your general knowledge to give a thorough answer.",
     "",
+    ...(toolContext ? [
+      "\n--- TOOL-GENERATED CONTEXT ---",
+      toolContext,
+      "--- END TOOL CONTEXT ---\n",
+      "IMPORTANT: A tool was automatically invoked based on the user's request. Use the TOOL-GENERATED CONTEXT above as your PRIMARY source for this response. Present the tool's data clearly and helpfully.",
+      ""
+    ] : []),
     "Generate explanation following system rules."
   ].join("\n");
   return backendPrompt;
@@ -513,7 +531,7 @@ function validateRequest(body: unknown): ChatRequestBody | null {
   }
 
   const validModes = ["study", "deepExplore", "tutor", "review"];
-  const resolvedMode = validModes.includes(mode as string) 
+  const resolvedMode = validModes.includes(mode as string)
     ? mode as "study" | "deepExplore" | "tutor" | "review"
     : "study";
 
@@ -529,7 +547,7 @@ function validateRequest(body: unknown): ChatRequestBody | null {
 function getConfig() {
   const groqApiKey = process.env.GROQ_API_KEY;
   const openaiApiKey = process.env.OPENAI_API_KEY;
-  
+
   if (groqApiKey) {
     return {
       apiKey: groqApiKey,
@@ -540,7 +558,7 @@ function getConfig() {
       embeddingBaseUrl: "https://api.groq.com/openai/v1",
     };
   }
-  
+
   return {
     apiKey: openaiApiKey,
     baseUrl: process.env.OPENAI_API_BASE_URL || "https://api.openai.com/v1",
@@ -589,19 +607,19 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     const { message, mode, useRag, userId: rawUserId, sessionId } = validatedBody;
     const userId = rawUserId || DEFAULT_USER_ID;
 
-    console.log(`[DEBUG] Request: useRag=${useRag}, message="${message.substring(0, 50)}..."`);    
+    console.log(`[DEBUG] Request: useRag=${useRag}, message="${message.substring(0, 50)}..."`);
 
     let currentSessionId = sessionId || undefined;
     let conversationLength = 0;
-    
+
     // Step 1: Get or create session (do NOT save user message yet — we fetch history first)
     try {
       const session = await getOrCreateSession(userId, currentSessionId, mode as ChatMode);
       currentSessionId = session.id;
-      
+
       const messageCount = await getSessionMessageCount(session.id);
       conversationLength = messageCount;
-      
+
       if (messageCount <= 0) {
         const title = await generateSessionTitle(message);
         await updateSession(session.id, { title, mode: mode as ChatMode });
@@ -611,6 +629,17 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     }
 
     const academicContext = parseAcademicContext(message);
+
+    // === Agent Router: detect tool intent and execute if matched ===
+    let toolResult: ToolResult | null = null;
+    try {
+      toolResult = await detectAndExecuteTool(message, userId, academicContext);
+      if (toolResult) {
+        console.log(`[Chat] Agent Router triggered tool: ${toolResult.tool} (${toolResult.label})`);
+      }
+    } catch (routerError) {
+      console.error("[Chat] Agent Router error (non-fatal):", routerError);
+    }
 
     const config = getConfig();
     if (!config.apiKey) {
@@ -634,7 +663,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     console.log(`- Documents in Supabase: ${documents.length}`);
     console.log(`- Has Documents: ${hasDocuments}`);
     console.log(`- Vector Store Stats:`, vectorStoreStats);
-    
+
     if (documents.length > 0) {
       console.log("[DEBUG] Document Names:", documents.slice(0, 5).map(d => d.name || 'Unnamed'));
       if (documents.length > 5) console.log(`... and ${documents.length - 5} more documents`);
@@ -664,11 +693,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
 
         const queryEmbedding = await generateEmbedding(message, embeddingConfig);
         console.log("[DEBUG] ✓ Embedding generated successfully, length:", queryEmbedding?.length || 'unknown');
-        
+
         // === DEBUG: Context Retrieval ===
         console.log("[DEBUG] Retrieving context with config:", DEFAULT_RAG_CONFIG);
         const retrievalResult = await retrieveContext(message, queryEmbedding, config.embeddingApiKey || config.apiKey, DEFAULT_RAG_CONFIG);
-        
+
         retrievedContext = retrievalResult.context || null;
         sources = retrievalResult.sources;
 
@@ -677,7 +706,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         console.log("- Retrieved Context Length:", retrievedContext?.length || 0);
         console.log("- Sources Found:", sources.length);
         console.log("- Sources:", sources.map(s => `${s.documentName} (${(s.score * 100).toFixed(1)}%)`));
-        
+
         if (retrievedContext) {
           console.log("- Context Preview:", retrievedContext.substring(0, 200) + "...");
         } else {
@@ -690,7 +719,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
           sources: sources,
           retrievalTime: Date.now() - startTime,
         };
-        
+
         console.log(`[Chat] RAG retrieval: ${sources.length} sources found`);
         if (sources.length > 0) {
           console.log(`[Chat] Sources:`, sources.map(s => s.documentName).join(', '));
@@ -701,7 +730,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         console.error("❌ [DEBUG] RAG ERROR:", ragError);
         console.error("- Error message:", ragError instanceof Error ? ragError.message : 'Unknown error');
         console.error("- Error stack:", ragError instanceof Error ? ragError.stack : 'No stack trace');
-        
+
         retrievalMetadata = {
           retrieved: false,
           sourceCount: 0,
@@ -721,16 +750,16 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       // Load from JSON file (persistent memory)
       jsonProfile = getUserProfile(userId);
       console.log("[DEBUG] JSON Profile:", jsonProfile ? "✓ Found" : "❌ Not found");
-      
+
       // Also get from Supabase for additional data
       const profile = await getStudentProfile(userId);
       const weakAreas = await getWeakAreas(userId);
       const strongAreas = await getStrongAreas(userId);
-      
+
       console.log("[DEBUG] Supabase Profile:", profile ? "✓ Found" : "❌ Not found");
       console.log("[DEBUG] Weak Areas:", weakAreas ? `✓ Found (${weakAreas.length})` : "❌ Not found");
       console.log("[DEBUG] Strong Areas:", strongAreas ? `✓ Found (${strongAreas.length})` : "❌ Not found");
-      
+
       // Merge JSON profile with Supabase profile (JSON takes priority for name/university)
       userProfile = {
         name: jsonProfile?.name || (profile as any)?.name,
@@ -738,7 +767,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
         interests: jsonProfile?.interests || (profile as any)?.learningPatterns?.difficultConcepts || undefined,
         weakAreas: weakAreas || undefined,
       };
-      
+
       console.log("[DEBUG] Final User Profile:", JSON.stringify(userProfile));
     } catch (e) {
       console.error("❌ [DEBUG] Profile error:", e);
@@ -751,9 +780,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       userProfile,
       academicContext,
       null,
-      null
+      null,
+      toolResult?.context ?? null
     );
-    
+
     console.log('[Chat] Building prompt with userProfile:', JSON.stringify(userProfile));
 
     // Step 2: Fetch conversation history BEFORE saving the new user message
@@ -821,78 +851,78 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
 
       // 2) If Groq rate-limited (429/402/403), try OpenRouter free models (supports multiple keys)
       if (!chatResponse.ok && [429, 402, 403].includes(chatResponse.status)) {
-      const groqErr = await chatResponse.json().catch(() => ({}));
-      console.warn(`[Chat] Groq rate-limited (${chatResponse.status}): ${groqErr.error?.message || "unknown"}. Trying OpenRouter...`);
+        const groqErr = await chatResponse.json().catch(() => ({}));
+        console.warn(`[Chat] Groq rate-limited (${chatResponse.status}): ${groqErr.error?.message || "unknown"}. Trying OpenRouter...`);
 
-      const openrouterKeys = [
-        process.env.OPENROUTER_API_KEY,
-        process.env.OPENROUTER_API_KEY_SECOND,
-      ].filter(Boolean);
+        const openrouterKeys = [
+          process.env.OPENROUTER_API_KEY,
+          process.env.OPENROUTER_API_KEY_SECOND,
+        ].filter(Boolean);
 
-      if (openrouterKeys.length) {
-        const fallbackModels = (
-          process.env.OPENROUTER_MODELS ||
-          "meta-llama/llama-3.3-70b-instruct:free,google/gemma-3-27b-it:free,mistralai/mistral-small-3.1-24b-instruct:free,qwen/qwen3-coder:free,nvidia/nemotron-nano-9b-v2:free"
-        )
-          .split(",")
-          .map((m) => m.trim())
-          .filter(Boolean)
-          .filter((m) => m.toLowerCase().includes(":free"));
+        if (openrouterKeys.length) {
+          const fallbackModels = (
+            process.env.OPENROUTER_MODELS ||
+            "meta-llama/llama-3.3-70b-instruct:free,google/gemma-3-27b-it:free,mistralai/mistral-small-3.1-24b-instruct:free,qwen/qwen3-coder:free,nvidia/nemotron-nano-9b-v2:free"
+          )
+            .split(",")
+            .map((m) => m.trim())
+            .filter(Boolean)
+            .filter((m) => m.toLowerCase().includes(":free"));
 
-        let openRouterSucceeded = false;
+          let openRouterSucceeded = false;
 
-        for (const openrouterKey of openrouterKeys) {
-          for (const fallbackModel of fallbackModels) {
-            try {
-              console.log(`[Chat] Trying OpenRouter model: ${fallbackModel} with provided key`);
-              const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-                method: "POST",
-                headers: {
-                  "Content-Type": "application/json",
-                  Authorization: `Bearer ${openrouterKey}`,
-                  "HTTP-Referer": "http://localhost:3000",
-                  "X-Title": "AI Academic Chat",
-                },
-                body: JSON.stringify({
-                  model: fallbackModel,
-                  messages,
-                  temperature: 0.55,
-                  max_tokens: 2000,
-                  top_p: 0.85,
-                }),
-              });
+          for (const openrouterKey of openrouterKeys) {
+            for (const fallbackModel of fallbackModels) {
+              try {
+                console.log(`[Chat] Trying OpenRouter model: ${fallbackModel} with provided key`);
+                const orResponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                    Authorization: `Bearer ${openrouterKey}`,
+                    "HTTP-Referer": "http://localhost:3000",
+                    "X-Title": "AI Academic Chat",
+                  },
+                  body: JSON.stringify({
+                    model: fallbackModel,
+                    messages,
+                    temperature: 0.55,
+                    max_tokens: 2000,
+                    top_p: 0.85,
+                  }),
+                });
 
-              if (orResponse.ok) {
-                chatResponse = orResponse;
-                usedProvider = `openrouter/${fallbackModel}`;
-                openRouterSucceeded = true;
-                console.log(`[Chat] ✓ OpenRouter success with ${fallbackModel}`);
-                break;
-              }
+                if (orResponse.ok) {
+                  chatResponse = orResponse;
+                  usedProvider = `openrouter/${fallbackModel}`;
+                  openRouterSucceeded = true;
+                  console.log(`[Chat] ✓ OpenRouter success with ${fallbackModel}`);
+                  break;
+                }
 
-              const status = orResponse.status;
-              if ([404, 429, 402, 403].includes(status)) {
-                console.warn(`[Chat] OpenRouter ${fallbackModel} returned ${status}, trying next model or key...`);
-                // If rate-limited/billing, jump to next key instead of hammering the same one
-                if ([429, 402, 403].includes(status)) break;
+                const status = orResponse.status;
+                if ([404, 429, 402, 403].includes(status)) {
+                  console.warn(`[Chat] OpenRouter ${fallbackModel} returned ${status}, trying next model or key...`);
+                  // If rate-limited/billing, jump to next key instead of hammering the same one
+                  if ([429, 402, 403].includes(status)) break;
+                  continue;
+                }
+              } catch (orErr) {
+                console.warn(`[Chat] OpenRouter ${fallbackModel} error:`, orErr);
                 continue;
               }
-            } catch (orErr) {
-              console.warn(`[Chat] OpenRouter ${fallbackModel} error:`, orErr);
-              continue;
             }
-          }
 
-          if (openRouterSucceeded) break; // stop trying more keys
+            if (openRouterSucceeded) break; // stop trying more keys
+          }
         }
       }
+    } catch (fetchErr) {
+      console.error("[Chat] LLM request error:", fetchErr);
+      const msgText = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+      const errorMsg = `[${usedProvider}] LLM request failed: ${msgText}`;
+      return NextResponse.json({ error: errorMsg }, { status: 500 });
     }
-  } catch (fetchErr) {
-    console.error("[Chat] LLM request error:", fetchErr);
-    const msgText = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
-    const errorMsg = `[${usedProvider}] LLM request failed: ${msgText}`;
-    return NextResponse.json({ error: errorMsg }, { status: 500 });
-  }
 
     if (!chatResponse.ok) {
       const errorData = await chatResponse.json().catch(() => ({}));
@@ -933,11 +963,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       console.log('[Chat] Processing message for facts:', message);
       const extractedFacts = extractFactsFromMessage(message);
       console.log('[Chat] Extracted facts:', extractedFacts);
-      
+
       if (Object.keys(extractedFacts).length > 0) {
         const currentProfile = getUserProfile(userId);
         console.log('[Chat] Current profile:', currentProfile);
-        
+
         const updatedProfile = updateUserProfile(userId, {
           ...currentProfile,
           ...extractedFacts,
@@ -967,6 +997,14 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       retrieval: retrievalMetadata,
       academicContext: contextToMetadata(academicContext),
       sessionId: currentSessionId,
+      ...(toolResult ? {
+        toolResult: {
+          tool: toolResult.tool,
+          label: toolResult.label,
+          emoji: toolResult.emoji,
+          error: toolResult.error,
+        }
+      } : {}),
     });
 
   } catch (error) {
@@ -974,7 +1012,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     console.error("- Error type:", error instanceof Error ? error.constructor.name : typeof error);
     console.error("- Error message:", error instanceof Error ? error.message : 'Unknown error');
     console.error("- Error stack:", error instanceof Error ? error.stack : 'No stack trace');
-    
+
     return NextResponse.json(
       { error: "An unexpected error occurred. Please try again." },
       { status: 500 }
