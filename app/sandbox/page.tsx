@@ -394,106 +394,13 @@ export default function SandboxPage() {
 
         {/* ── Tabs ── */}
         <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
-          {[["lab","🧪","Lab"],["study","🎯","Study"],["about","📖","About"]].map(([id, icon, label]) => (
+          {[,["study","🎯","Study"],["about","📖","About"]].map(([id, icon, label]) => (
             <button key={id} onClick={() => setActiveTab(id)} style={pillBtn(activeTab === id, { bg: "#EEF2FF", border: "#C7D2FE", text: "#4F46E5" })}>
               {icon} {label}
             </button>
           ))}
         </div>
-
-        {/* ── Lab Tab ── */}
-        {activeTab === "lab" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            <div style={card({ padding: "24px" })}>
-              <h2 style={{ fontSize: 15, fontWeight: 800, color: "#0F172A", marginBottom: 10 }}>Mini GPT Lab</h2>
-              <p style={{ fontSize: 13, color: "#64748B", marginBottom: 14 }}>
-                Train and sample from the sandbox model via <code>/api/mini-gpt</code>.
-              </p>
-
-              <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 14, flexWrap: "wrap" }}>
-                <select
-                  value={labBackend}
-                  onChange={(e) => setLabBackend(e.target.value as "mini-gpt" | "karpathy")}
-                  style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid #E2E8F0" }}
-                >
-                  <option value="mini-gpt">mini-gpt</option>
-                  <option value="karpathy">mini-gpt-karpathy</option>
-                </select>
-                <span style={{
-                  padding: "4px 10px",
-                  borderRadius: 20,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  color: labStatus === "online" ? "#166534" : labStatus === "offline" ? "#991b1b" : "#334155",
-                  background: labStatus === "online" ? "#dcfce7" : labStatus === "offline" ? "#fee2e2" : "#e2e8f0",
-                }}>
-                  {labStatus === "checking" ? "Checking..." : labStatus.toUpperCase()}
-                </span>
-                <span style={{ fontSize: 12, color: "#64748B" }}>{labStatusMessage}</span>
-                {labBackend === "mini-gpt" && (
-                  <button className="btn-premium" onClick={checkLabStatus}>Refresh Status</button>
-                )}
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(220px,1fr))", gap: 12, marginBottom: 14 }}>
-                <Input
-                  label="Epochs (n_steps)"
-                  type="number"
-                  min={10}
-                  max={5000}
-                  value={labEpochs}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setLabEpochs(Number(e.target.value))}
-                />
-                <Input
-                  label="Learning Rate"
-                  type="number"
-                  step="0.0001"
-                  min={0.0001}
-                  max={1}
-                  value={labLearningRate}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setLabLearningRate(Number(e.target.value))}
-                />
-              </div>
-
-              <button
-                onClick={runLabTrain}
-                disabled={labTrainLoading || labStatus === "offline"}
-                className="btn-premium"
-                style={{ marginBottom: 12 }}
-              >
-                {labTrainLoading ? "Training..." : "Train"}
-              </button>
-
-              {labTrainResponse && (
-                <pre style={{ background: "#F8FAFC", padding: 12, borderRadius: 10, fontSize: 12, overflowX: "auto" }}>
-                  {JSON.stringify(labTrainResponse, null, 2)}
-                </pre>
-              )}
-
-              <div style={{ marginTop: 14, display: "grid", gap: 10 }}>
-                <Input
-                  label="Generate Prompt"
-                  value={labPrompt}
-                  onChange={(e: ChangeEvent<HTMLInputElement>) => setLabPrompt(e.target.value)}
-                  placeholder="Enter prompt"
-                />
-                <button
-                  onClick={runLabGenerate}
-                  disabled={labGenerateLoading || labStatus === "offline"}
-                  className="btn-premium"
-                >
-                  {labGenerateLoading ? "Generating..." : "Generate"}
-                </button>
-                {!!labGeneratedText && (
-                  <pre style={{ background: "#F8FAFC", padding: 12, borderRadius: 10, fontSize: 12, whiteSpace: "pre-wrap" }}>
-                    {labGeneratedText}
-                  </pre>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
+       
         {/* ── Study Tab ── */}
         {activeTab === "study" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>

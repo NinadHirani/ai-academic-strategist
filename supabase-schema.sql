@@ -67,6 +67,73 @@ CREATE INDEX IF NOT EXISTS idx_pyqs_semester ON pyqs(semester);
 -- Composite index for common queries
 CREATE INDEX IF NOT EXISTS idx_pyqs_subject_unit ON pyqs(subject, unit);
 
+-- PYQ uploaded papers metadata
+CREATE TABLE IF NOT EXISTS pyq_papers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  subject TEXT NOT NULL,
+  semester INTEGER,
+  university TEXT DEFAULT 'GTU',
+  file_name TEXT NOT NULL,
+  source_document_id UUID,
+  extracted_questions_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Canonical grouped questions after exact/semantic repeat merging
+CREATE TABLE IF NOT EXISTS pyq_question_groups (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  subject TEXT NOT NULL,
+  canonical_question TEXT NOT NULL,
+  normalized_question TEXT NOT NULL,
+  unit TEXT,
+  topic TEXT,
+  marks INTEGER DEFAULT 5,
+  asked_count INTEGER DEFAULT 1,
+  first_asked_year INTEGER,
+  last_asked_year INTEGER,
+  asked_years INTEGER[] DEFAULT '{}',
+  match_type TEXT DEFAULT 'exact',
+  frequency_label TEXT DEFAULT 'Single',
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Individual occurrences that belong to one canonical group
+CREATE TABLE IF NOT EXISTS pyq_question_occurrences (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  group_id UUID NOT NULL REFERENCES pyq_question_groups(id) ON DELETE CASCADE,
+  pyq_id UUID REFERENCES pyqs(id) ON DELETE SET NULL,
+  year INTEGER,
+  marks INTEGER,
+  unit TEXT,
+  topic TEXT,
+  question_text TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- Generated final answers for canonical grouped questions
+CREATE TABLE IF NOT EXISTS pyq_generated_answers (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  group_id UUID NOT NULL REFERENCES pyq_question_groups(id) ON DELETE CASCADE,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  marks INTEGER,
+  target_pages NUMERIC(4,2),
+  asked_count INTEGER,
+  asked_years INTEGER[] DEFAULT '{}',
+  figure_hint TEXT,
+  table_hint TEXT,
+  source_grounded BOOLEAN DEFAULT true,
+  generated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pyq_papers_subject ON pyq_papers(subject);
+CREATE INDEX IF NOT EXISTS idx_pyq_groups_subject ON pyq_question_groups(subject);
+CREATE INDEX IF NOT EXISTS idx_pyq_groups_match_type ON pyq_question_groups(match_type);
+CREATE INDEX IF NOT EXISTS idx_pyq_groups_asked_count ON pyq_question_groups(asked_count DESC);
+CREATE INDEX IF NOT EXISTS idx_pyq_occurrences_group_id ON pyq_question_occurrences(group_id);
+CREATE INDEX IF NOT EXISTS idx_pyq_answers_group_id ON pyq_generated_answers(group_id);
+
 -- =============================================
 -- DOCUMENTS & VECTORS
 -- =============================================

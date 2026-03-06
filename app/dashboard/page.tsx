@@ -24,7 +24,7 @@ export default async function DashboardPage() {
 
             {/* ── All charts + stat cards (client) ── */}
             <DashboardCharts
-                weeklyData={velocityData.weeklyBreakdown}
+                weeklyData={velocityData.weeklyData}
                 retentionScore={retentionScore}
                 heatmapData={heatmapData}
                 topicsMastered={topicsMastered}

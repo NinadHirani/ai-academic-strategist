@@ -80,6 +80,46 @@ export interface RevisionPriority {
   suggestedMarks: number;
 }
 
+export interface PersistedPYQOccurrence {
+  pyqId?: string;
+  year: number;
+  marks: number;
+  unit: string;
+  topic: string;
+  questionText: string;
+}
+
+export interface PersistedPYQGroup {
+  id?: string;
+  subject: string;
+  canonicalQuestion: string;
+  normalizedQuestion: string;
+  unit: string;
+  topic: string;
+  marks: number;
+  askedCount: number;
+  firstAskedYear: number;
+  lastAskedYear: number;
+  askedYears: number[];
+  matchType: "exact" | "semantic";
+  frequencyLabel: string;
+  occurrences: PersistedPYQOccurrence[];
+}
+
+export interface PersistedGeneratedAnswer {
+  id?: string;
+  groupId: string;
+  question: string;
+  answer: string;
+  marks: number;
+  targetPages: number;
+  askedCount: number;
+  askedYears: number[];
+  figureHint?: string | null;
+  tableHint?: string | null;
+  sourceGrounded: boolean;
+}
+
 export interface PYQStats {
   totalQuestions: number;
   totalSubjects: number;
@@ -159,7 +199,7 @@ export class PYQStore {
       throw new Error(`Failed to add PYQs: ${error.message}`);
     }
 
-    return data.map((item: any) => this.mapToPYQ(item));
+    return data.map((item: Record<string, unknown>) => this.mapToPYQ(item));
   }
 
   /**
@@ -194,7 +234,7 @@ export class PYQStore {
       return [];
     }
 
-    return data.map((item: any) => this.mapToPYQ(item));
+    return data.map((item: Record<string, unknown>) => this.mapToPYQ(item));
   }
 
   /**
@@ -214,7 +254,7 @@ export class PYQStore {
       return [];
     }
 
-    return data.map((item: any) => this.mapToPYQ(item));
+    return data.map((item: Record<string, unknown>) => this.mapToPYQ(item));
   }
 
   /**
@@ -270,7 +310,7 @@ export class PYQStore {
       return [];
     }
 
-    return data.map((item: any) => this.mapToPYQ(item));
+    return data.map((item: Record<string, unknown>) => this.mapToPYQ(item));
   }
 
   /**
@@ -279,7 +319,7 @@ export class PYQStore {
   async update(id: string, updates: Partial<Omit<PYQ, "id" | "createdAt">>): Promise<PYQ | null> {
     if (!this.useSupabase) return null;
 
-    const updateData: Record<string, any> = {};
+    const updateData: Record<string, unknown> = {};
     if (updates.subject) updateData.subject = updates.subject;
     if (updates.unit) updateData.unit = updates.unit;
     if (updates.topic) updateData.topic = updates.topic;
@@ -332,7 +372,10 @@ export class PYQStore {
     }
 
     const subjects = new Set<string>();
-    data.forEach((item: any) => subjects.add(item.subject));
+    data.forEach((item: Record<string, unknown>) => {
+      const value = item.subject;
+      if (typeof value === "string") subjects.add(value);
+    });
     return Array.from(subjects);
   }
 
@@ -354,7 +397,10 @@ export class PYQStore {
     }
 
     const units = new Set<string>();
-    data.forEach((item: any) => units.add(item.unit));
+    data.forEach((item: Record<string, unknown>) => {
+      const value = item.unit;
+      if (typeof value === "string") units.add(value);
+    });
     return Array.from(units);
   }
 
@@ -376,7 +422,10 @@ export class PYQStore {
     }
 
     const topics = new Set<string>();
-    data.forEach((item: any) => topics.add(item.topic));
+    data.forEach((item: Record<string, unknown>) => {
+      const value = item.topic;
+      if (typeof value === "string") topics.add(value);
+    });
     return Array.from(topics);
   }
 
@@ -397,7 +446,10 @@ export class PYQStore {
     }
 
     const years = new Set<number>();
-    data.forEach((item: any) => years.add(item.year));
+    data.forEach((item: Record<string, unknown>) => {
+      const value = item.year;
+      if (typeof value === "number") years.add(value);
+    });
     return Array.from(years).sort((a, b) => a - b);
   }
 
@@ -487,21 +539,214 @@ export class PYQStore {
   }
 
   /**
+   * Replace consolidated groups and their occurrences for a subject.
+   */
+  async replaceConsolidatedGroups(subject: string, groups: PersistedPYQGroup[]): Promise<void> {
+    if (!this.useSupabase) return;
+
+    const { error: deleteError } = await supabase
+      .from("pyq_question_groups")
+      .delete()
+      .eq("subject", subject);
+
+    if (deleteError) {
+      console.error("[PYQ Store] Error clearing existing groups:", deleteError);
+      throw new Error(deleteError.message);
+    }
+
+    for (const group of groups) {
+      const { data: insertedGroup, error: groupError } = await supabase
+        .from("pyq_question_groups")
+        .insert({
+          subject: group.subject,
+          canonical_question: group.canonicalQuestion,
+          normalized_question: group.normalizedQuestion,
+          unit: group.unit,
+          topic: group.topic,
+          marks: group.marks,
+          asked_count: group.askedCount,
+          first_asked_year: group.firstAskedYear,
+          last_asked_year: group.lastAskedYear,
+          asked_years: group.askedYears,
+          match_type: group.matchType,
+          frequency_label: group.frequencyLabel,
+        })
+        .select("id")
+        .single();
+
+      if (groupError || !insertedGroup) {
+        console.error("[PYQ Store] Error inserting group:", groupError);
+        throw new Error(groupError?.message || "Failed to insert group");
+      }
+
+      if (group.occurrences.length) {
+        const occurrenceRows = group.occurrences.map((occ) => ({
+          group_id: insertedGroup.id,
+          pyq_id: occ.pyqId,
+          year: occ.year,
+          marks: occ.marks,
+          unit: occ.unit,
+          topic: occ.topic,
+          question_text: occ.questionText,
+        }));
+
+        const { error: occError } = await supabase
+          .from("pyq_question_occurrences")
+          .insert(occurrenceRows);
+
+        if (occError) {
+          console.error("[PYQ Store] Error inserting occurrences:", occError);
+          throw new Error(occError.message);
+        }
+      }
+    }
+  }
+
+  /**
+   * Fetch persisted consolidated groups with their occurrences.
+   */
+  async getConsolidatedGroups(subject?: string): Promise<PersistedPYQGroup[]> {
+    if (!this.useSupabase) return [];
+
+    let query = supabase
+      .from("pyq_question_groups")
+      .select(`
+        id,
+        subject,
+        canonical_question,
+        normalized_question,
+        unit,
+        topic,
+        marks,
+        asked_count,
+        first_asked_year,
+        last_asked_year,
+        asked_years,
+        match_type,
+        frequency_label,
+        pyq_question_occurrences (
+          pyq_id,
+          year,
+          marks,
+          unit,
+          topic,
+          question_text
+        )
+      `)
+      .order("asked_count", { ascending: false });
+
+    if (subject) {
+      query = query.eq("subject", subject);
+    }
+
+    const { data, error } = await query;
+    if (error || !data) {
+      console.error("[PYQ Store] Error fetching consolidated groups:", error);
+      return [];
+    }
+
+    return data.map((row: Record<string, unknown>) => ({
+      id: row.id,
+      subject: row.subject,
+      canonicalQuestion: row.canonical_question,
+      normalizedQuestion: row.normalized_question,
+      unit: row.unit || "General",
+      topic: row.topic || "General",
+      marks: row.marks || 5,
+      askedCount: row.asked_count || 1,
+      firstAskedYear: row.first_asked_year || 0,
+      lastAskedYear: row.last_asked_year || 0,
+      askedYears: Array.isArray(row.asked_years) ? row.asked_years : [],
+      matchType: row.match_type === "semantic" ? "semantic" : "exact",
+      frequencyLabel: row.frequency_label || "Single",
+      occurrences: Array.isArray(row.pyq_question_occurrences)
+        ? row.pyq_question_occurrences.map((occ: Record<string, unknown>) => ({
+            pyqId: occ.pyq_id,
+            year: occ.year,
+            marks: occ.marks,
+            unit: occ.unit,
+            topic: occ.topic,
+            questionText: occ.question_text,
+          }))
+        : [],
+    }));
+  }
+
+  /**
+   * Persist generated answer for a consolidated group.
+   */
+  async saveGeneratedAnswer(input: PersistedGeneratedAnswer): Promise<void> {
+    if (!this.useSupabase) return;
+
+    const { error } = await supabase
+      .from("pyq_generated_answers")
+      .insert({
+        group_id: input.groupId,
+        question: input.question,
+        answer: input.answer,
+        marks: input.marks,
+        target_pages: input.targetPages,
+        asked_count: input.askedCount,
+        asked_years: input.askedYears,
+        figure_hint: input.figureHint,
+        table_hint: input.tableHint,
+        source_grounded: input.sourceGrounded,
+      });
+
+    if (error) {
+      console.error("[PYQ Store] Error saving generated answer:", error);
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Retrieve generated answers for a consolidated group.
+   */
+  async getGeneratedAnswers(groupId: string): Promise<PersistedGeneratedAnswer[]> {
+    if (!this.useSupabase) return [];
+
+    const { data, error } = await supabase
+      .from("pyq_generated_answers")
+      .select("*")
+      .eq("group_id", groupId)
+      .order("generated_at", { ascending: false });
+
+    if (error || !data) {
+      console.error("[PYQ Store] Error fetching generated answers:", error);
+      return [];
+    }
+
+    return data.map((row: Record<string, unknown>) => ({
+      id: row.id,
+      groupId: row.group_id,
+      question: row.question,
+      answer: row.answer,
+      marks: row.marks,
+      targetPages: Number(row.target_pages) || 0,
+      askedCount: row.asked_count,
+      askedYears: Array.isArray(row.asked_years) ? row.asked_years : [],
+      figureHint: row.figure_hint,
+      tableHint: row.table_hint,
+      sourceGrounded: row.source_grounded ?? true,
+    }));
+  }
+
+  /**
    * Map database row to PYQ interface
    */
-  private mapToPYQ(data: any): PYQ {
+  private mapToPYQ(data: Record<string, unknown>): PYQ {
     return {
-      id: data.id,
-      subject: data.subject,
-      unit: data.unit,
-      topic: data.topic,
-      questionText: data.question_text,
-      questionType: data.question_type,
-      marks: data.marks,
-      year: data.year,
-      semester: data.semester,
-      university: data.university,
-      createdAt: new Date(data.created_at),
+      id: String(data.id || ""),
+      subject: String(data.subject || "General"),
+      unit: String(data.unit || "General"),
+      topic: String(data.topic || "General"),
+      questionText: String(data.question_text || ""),
+      questionType: String(data.question_type || "short_answer") as QuestionType,
+      marks: Number(data.marks || 5),
+      year: Number(data.year || new Date().getFullYear()),
+      semester: typeof data.semester === "number" ? data.semester : undefined,
+      university: typeof data.university === "string" ? data.university : undefined,
+      createdAt: new Date(String(data.created_at || new Date().toISOString())),
     };
   }
 }
