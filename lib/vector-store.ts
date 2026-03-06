@@ -184,7 +184,7 @@ class SupabaseVectorStore {
    * Fetch all chunks from Supabase and populate local cache
    */
   private async syncFromSupabase(): Promise<void> {
-    if (!this.isConfigured()) return;
+    if (!this.isConfigured() || !this.supabase) return;
 
     try {
       const { data, error } = await this.supabase
@@ -196,8 +196,8 @@ class SupabaseVectorStore {
         return;
       }
 
-      if (data && data.length > 0) {
-        for (const row of data) {
+      if (data && (data as any[]).length > 0) {
+        for (const row of (data as any[])) {
           const chunk: VectorChunk = {
             id: row.id,
             content: row.content,
@@ -230,7 +230,7 @@ class SupabaseVectorStore {
    * Add chunks to the store
    */
   async add(chunks: VectorChunk[]): Promise<void> {
-    if (!this.isConfigured()) {
+    if (!this.isConfigured() || !this.supabase) {
       console.warn("[SupabaseVectorStore] Not configured, using memory only");
       for (const chunk of chunks) {
         this.memoryCache.set(chunk.id, chunk);
@@ -257,7 +257,7 @@ class SupabaseVectorStore {
 
       const { error } = await this.supabase
         .from('document_chunks')
-        .insert(records);
+        .insert(records as any);
 
       if (error) {
         console.error("[SupabaseVectorStore] Insert error:", error);
@@ -322,12 +322,12 @@ class SupabaseVectorStore {
 
         if (error) {
           console.error("[SupabaseVectorStore] Fetch error:", error);
-        } else if (data && data.length > 0) {
+        } else if (data && (data as any[]).length > 0) {
           // Clear and rebuild local cache with Supabase data
           this.memoryCache.clear();
           this.documentChunks.clear();
 
-          for (const row of data) {
+          for (const row of (data as any[])) {
             const chunk: VectorChunk = {
               id: row.id,
               content: row.content,
@@ -414,7 +414,7 @@ class SupabaseVectorStore {
     }
     this.documentChunks.delete(documentId);
 
-    if (this.isConfigured()) {
+    if (this.isConfigured() && this.supabase) {
       try {
         await this.supabase
           .from('document_chunks')
@@ -544,7 +544,7 @@ class InMemoryVectorStore {
    */
   private saveToDisk(): void {
     try {
-      saveChunksToDisk(this.chunks);
+      saveChunksToDisk(this.chunks as any);
     } catch (error) {
       console.error("[InMemoryVectorStore] Save error:", error);
     }

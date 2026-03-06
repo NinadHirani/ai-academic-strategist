@@ -120,7 +120,7 @@ export async function calculateRetentionScore(userId: string) {
  */
 export async function generateWeaknessHeatmap(userId: string) {
     const profile = await getStudentProfile(userId);
-    const weakTopics = profile?.weak_topics || [];
+    const weakTopics = profile?.weakAreas || [];
 
     // Group topics into a grid format
     // In a real app, we'd map these to a subject/unit hierarchy

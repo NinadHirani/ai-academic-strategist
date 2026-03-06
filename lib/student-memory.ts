@@ -456,7 +456,7 @@ export async function clearStudentData(userId: string): Promise<void> {
 // These functions maintain compatibility with the existing code
 // They wrap async Supabase calls with sync versions where needed
 
-let memoryCache: Record<string, WeaknessProfile> = {};
+const memoryCache: Record<string, WeaknessProfile> = {};
 const CACHE_TTL = 60000; // 1 minute cache
 
 function getCachedProfile(userId: string): WeaknessProfile | null {
