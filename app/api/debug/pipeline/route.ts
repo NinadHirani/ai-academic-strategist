@@ -19,6 +19,10 @@ interface DiagnosticResult {
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const results: DiagnosticResult[] = [];
   const searchParams = request.nextUrl.searchParams;
   const runFull = searchParams.get("full") === "true";

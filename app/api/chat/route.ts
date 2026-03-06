@@ -6,6 +6,9 @@ import { getOrCreateSession, addMessage, getConversationContext, generateSession
 import { getStudentProfile, getWeakAreas, getStrongAreas, getLearningStats } from "@/lib/student-memory";
 import { getUserProfile, updateUserProfile, getProfileForPrompt, processAIResponseForFacts, extractFactsFromMessage } from "@/lib/user-profile-json";
 import { detectAndExecuteTool, ToolResult } from "@/lib/agent-router";
+import { resolveRequestUserId } from "@/lib/request-auth";
+import { DEFAULT_USER_ID, GROQ_MODEL } from "@/lib/config";
+import { analyzeMessageForWeakness, generateWeaknessPromptAddition } from "@/lib/weakness-analyzer";
 import { Readable } from "stream";
 
 interface ChatRequestBody {
@@ -76,8 +79,6 @@ const DEFAULT_RAG_CONFIG: RAGConfig = {
   similarityThreshold: 0.05, // Lowered for better retrieval
 };
 
-const GROQ_MODEL = "llama-3.3-70b-versatile";
-const DEFAULT_USER_ID = "anonymous";
 const MAX_CHAT_HISTORY_MESSAGES = 30;
 
 // ============================================================================
@@ -463,7 +464,8 @@ function buildSystemPrompt(
   academicContext: AcademicContext | null,
   syllabusContext: string | null,
   contextString: string | null,
-  toolContext?: string | null
+  toolContext?: string | null,
+  weaknessAddition?: string | null
 ) {
   if (contextString) syllabusContext = contextString;
   let searchSummaries = "";
@@ -516,6 +518,7 @@ function buildSystemPrompt(
       "IMPORTANT: A tool was automatically invoked based on the user's request. Use the TOOL-GENERATED CONTEXT above as your PRIMARY source for this response. Present the tool's data clearly and helpfully.",
       ""
     ] : []),
+    ...(weaknessAddition ? [weaknessAddition] : []),
     "Generate explanation following system rules."
   ].join("\n");
   return backendPrompt;
@@ -604,8 +607,12 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       return NextResponse.json({ error: "Message required and must be a string" }, { status: 400 });
     }
 
-    const { message, mode, useRag, userId: rawUserId, sessionId } = validatedBody;
-    const userId = rawUserId || DEFAULT_USER_ID;
+    const { message, mode, useRag, sessionId } = validatedBody;
+    const auth = await resolveRequestUserId(request);
+    if (!auth.ok) {
+      return auth.response as NextResponse<{ error: string }>;
+    }
+    const userId = auth.userId || DEFAULT_USER_ID;
 
     console.log(`[DEBUG] Request: useRag=${useRag}, message="${message.substring(0, 50)}..."`);
 
@@ -745,6 +752,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
     // Fetch user profile for Long-Term Memory (from JSON file + Supabase)
     let userProfile: UserProfile | null = null;
     let jsonProfile = null;
+    let studentProfile = null;
+    let weakAreas: string[] = [];
     try {
       console.log("[DEBUG] === USER PROFILE LOADING ===");
       // Load from JSON file (persistent memory)
@@ -753,7 +762,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
 
       // Also get from Supabase for additional data
       const profile = await getStudentProfile(userId);
-      const weakAreas = await getWeakAreas(userId);
+      studentProfile = profile;
+      weakAreas = await getWeakAreas(userId);
       const strongAreas = await getStrongAreas(userId);
 
       console.log("[DEBUG] Supabase Profile:", profile ? "✓ Found" : "❌ Not found");
@@ -773,6 +783,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       console.error("❌ [DEBUG] Profile error:", e);
     }
 
+    const weaknessAnalysis = analyzeMessageForWeakness(message, studentProfile as any);
+    const weaknessAddition = generateWeaknessPromptAddition(weakAreas, weaknessAnalysis);
+
     const systemPrompt = buildSystemPrompt(
       mode,
       retrievedContext,
@@ -781,7 +794,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<ChatRespo
       academicContext,
       null,
       null,
-      toolResult?.context ?? null
+      toolResult?.context ?? null,
+      weaknessAddition
     );
 
     console.log('[Chat] Building prompt with userProfile:', JSON.stringify(userProfile));

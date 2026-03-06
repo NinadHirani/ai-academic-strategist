@@ -1,36 +1,21 @@
 "use client";
 
 import React, { useState, useRef, useCallback, useEffect } from "react";
-
-interface Document {
-  id: string;
-  name: string;
-  type: string;
-  status: "ready" | "processing" | "error";
-  chunkCount?: number;
-  size?: number;
-  error?: string;
-  progress?: number;
-}
+import { deleteAllDocuments, deleteDocument } from "@/lib/documents";
+import {
+  ALLOWED_EXTENSIONS,
+  ALLOWED_TYPES,
+  MAX_FILE_SIZE,
+  type UploadedDocument,
+} from "@/lib/types";
 
 interface FileUploadProps {
-  onDocumentsChange?: (documents: Document[]) => void;
+  onDocumentsChange?: (documents: UploadedDocument[]) => void;
   onGenerateStudyMaterial?: (docId: string, type: 'quiz' | 'flashcards') => void;
 }
 
-const ALLOWED_TYPES = [
-  "application/pdf",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "text/plain",
-  "text/markdown",
-  "text/csv",
-];
-
-const ALLOWED_EXTENSIONS = [".pdf", ".docx", ".txt", ".md", ".csv"];
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-
 export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial }: FileUploadProps) {
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -53,9 +38,9 @@ export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial 
   }, []);
 
   // Upload a single file with progress tracking
-  const uploadSingleFile = async (file: File, tempId: string): Promise<Document> => {
+  const uploadSingleFile = async (file: File, tempId: string): Promise<UploadedDocument> => {
     // Create initial document entry
-    const newDoc: Document = {
+    const newDoc: UploadedDocument = {
       id: tempId,
       name: file.name,
       type: file.type || "application/octet-stream",
@@ -89,7 +74,7 @@ export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial 
       }
 
       // Update document with the result
-      const updatedDoc: Document = {
+      const updatedDoc: UploadedDocument = {
         id: data.document?.id || tempId,
         name: file.name,
         type: file.type || "application/octet-stream",
@@ -110,7 +95,7 @@ export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial 
       const errorMessage = err instanceof Error ? err.message : "Upload failed";
       console.error("[FileUpload] Error:", errorMessage);
 
-      const errorDoc: Document = {
+      const errorDoc: UploadedDocument = {
         id: tempId,
         name: file.name,
         type: file.type || "application/octet-stream",
@@ -150,7 +135,7 @@ export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial 
       validFiles.push({ file, tempId });
 
       // Add initial document entry
-      const newDoc: Document = {
+      const newDoc: UploadedDocument = {
         id: tempId,
         name: file.name,
         type: file.type || "application/octet-stream",
@@ -189,14 +174,7 @@ export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial 
     }
 
     try {
-      const response = await fetch(`/api/documents?id=${docId}`, {
-        method: "DELETE",
-      });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error || "Failed to delete document");
-      }
+      await deleteDocument(docId);
 
       setDocuments((prev) => prev.filter((doc) => doc.id !== docId));
     } catch (err) {
@@ -212,18 +190,13 @@ export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial 
     // Optimistically clear UI
     setDocuments([]);
 
-    // Delete persisted docs (skip temp entries)
     try {
-      const deleteCalls = currentDocs
-        .filter((d) => !d.id.startsWith("temp-"))
-        .map((d) => fetch(`/api/documents?id=${encodeURIComponent(d.id)}`, { method: "DELETE" }));
-
-      if (deleteCalls.length) {
-        await Promise.allSettled(deleteCalls);
-      }
+      await deleteAllDocuments();
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : "Delete all failed";
       setError(errorMessage);
+      // Restore local docs when server-side delete-all fails.
+      setDocuments(currentDocs);
     }
   };
 
@@ -288,7 +261,7 @@ export default function FileUpload({ onDocumentsChange, onGenerateStudyMaterial 
           ref={fileInputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.txt,.md,.csv"
+          accept={ALLOWED_EXTENSIONS.join(",")}
           onChange={handleInputChange}
           className="file-input"
           disabled={isUploading}

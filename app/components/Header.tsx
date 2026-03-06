@@ -13,8 +13,8 @@ export default function Header() {
         <nav className="nav-links">
           <a href="/" className="nav-link">Home</a>
           <a href="/dashboard" className="nav-link">📈 Dashboard</a>
-          <a href="/mentor" className="nav-link">🧘 AI Mentor</a>
           <a href="/career" className="nav-link">💼 Career</a>
+          <a href="/pyq" className="nav-link">📋 Past Papers</a>
           <a href="/copilot" className="nav-link nav-link-copilot">🎓 Academic Copilot</a>
           <a href="/sandbox" className="nav-link nav-link-sandbox">🧪 Mini GPT Lab</a>
         </nav>

@@ -7,6 +7,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getVectorStore, getRetrievalLogs, clearRetrievalLogs, resetVectorStore } from "@/lib/vector-store";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     const vectorStore = getVectorStore();
     const stats = vectorStore.getStats();
@@ -27,6 +31,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 export async function DELETE(): Promise<NextResponse> {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     // Clear retrieval logs
     clearRetrievalLogs();

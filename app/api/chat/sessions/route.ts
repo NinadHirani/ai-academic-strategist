@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserSessions, deleteSession, createSession } from "@/lib/chat-history";
+import { resolveRequestUserId } from "@/lib/request-auth";
 
 interface SessionResponse {
   id: string;
@@ -11,8 +12,11 @@ interface SessionResponse {
 
 export async function GET(request: NextRequest) {
   try {
+    const auth = await resolveRequestUserId(request);
+    if (!auth.ok) return auth.response;
+
     const searchParams = request.nextUrl.searchParams;
-    const userId = searchParams.get("userId") || "anonymous";
+    const userId = auth.userId;
     const limit = parseInt(searchParams.get("limit") || "100");
 
     const sessions = await getUserSessions(userId, limit);
@@ -34,10 +38,13 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { userId, mode, title } = body;
+    const auth = await resolveRequestUserId(request);
+    if (!auth.ok) return auth.response;
 
-    const newSession = await createSession(userId || "anonymous", mode || "study", title || "New Chat");
+    const body = await request.json();
+    const { mode, title } = body;
+
+    const newSession = await createSession(auth.userId, mode || "study", title || "New Chat");
 
     return NextResponse.json({
       success: true,

@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getDocuments, deleteDocument, getStats } from "@/lib/rag";
+import { resolveRequestUserId } from "@/lib/request-auth";
 
 interface Document {
   id: string;
@@ -22,8 +23,8 @@ interface Document {
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
-    const searchParams = request.nextUrl.searchParams;
-    const userId = searchParams.get("userId") || undefined;
+    const auth = await resolveRequestUserId(request);
+    if (!auth.ok) return auth.response;
 
     const documents = getDocuments();
     const stats = getStats();
@@ -61,6 +62,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
  */
 export async function DELETE(request: NextRequest): Promise<NextResponse> {
   try {
+    const auth = await resolveRequestUserId(request);
+    if (!auth.ok) return auth.response;
+
     const searchParams = request.nextUrl.searchParams;
     const documentId = searchParams.get("id");
 

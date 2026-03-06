@@ -17,13 +17,13 @@ import type {
   ScheduleBlock,
 } from "./copilot-types";
 import { groqKeyManager } from "./groq-key-manager";
+import { GROQ_MODEL } from "./config";
 
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-const GROQ_MODEL = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
 const SEARCH_TIMEOUT = 15000;
 const LLM_TIMEOUT = 90000; // Increased for complex syllabus generation
 

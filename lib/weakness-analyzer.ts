@@ -304,3 +304,52 @@ export async function getReinforcementTip(userId: string): Promise<string | null
   return tip;
 }
 
+/**
+ * Lightweight message analysis used at prompt-build time.
+ */
+export function analyzeMessageForWeakness(
+  message: string,
+  _studentProfile?: WeaknessProfile | null
+): WeaknessAnalysis {
+  const topicExtraction = extractTopics(message);
+  const detectedTopics = topicExtraction.topics.map((t) => t.name);
+
+  return {
+    isRepeated: false,
+    detectedTopics,
+    suggestedWeaknesses: [],
+    needsReinforcement: detectedTopics.length > 0,
+    revisionSuggestions: [],
+  };
+}
+
+/**
+ * Build an additive system-prompt segment from known weak areas + current message analysis.
+ */
+export function generateWeaknessPromptAddition(
+  weakAreas: string[],
+  weaknessAnalysis: WeaknessAnalysis
+): string {
+  const lines: string[] = [];
+
+  if (weakAreas.length > 0) {
+    lines.push(`Known weak areas: ${weakAreas.slice(0, 5).join(", ")}`);
+  }
+
+  if (weaknessAnalysis.detectedTopics.length > 0) {
+    lines.push(`Current message topics: ${weaknessAnalysis.detectedTopics.join(", ")}`);
+  }
+
+  if (!lines.length) {
+    return "";
+  }
+
+  return [
+    "",
+    "## Weakness-Aware Guidance",
+    ...lines,
+    "Instruction: give one extra concrete example and one checkpoint question when addressing weak areas.",
+    "",
+  ].join("\n");
+}
+

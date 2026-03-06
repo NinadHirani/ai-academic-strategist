@@ -1,30 +1,98 @@
 -- =============================================
--- FIX: RLS Policies for Chat History
+-- SAFE RLS SETUP (PRODUCTION-ORIENTED)
 -- =============================================
+-- This script ENABLES RLS and adds explicit scoped policies.
+-- It intentionally does NOT disable RLS.
 
--- Option 1: Disable RLS (simpler for now)
--- Run these if you want to disable RLS completely:
+-- Ensure RLS is enabled on key tables
+ALTER TABLE IF EXISTS chat_sessions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS chat_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS user_interactions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE IF EXISTS pyqs ENABLE ROW LEVEL SECURITY;
 
-ALTER TABLE chat_sessions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE chat_messages DISABLE ROW LEVEL SECURITY;
-ALTER TABLE user_interactions DISABLE ROW LEVEL SECURITY;
-ALTER TABLE pyqs DISABLE ROW LEVEL SECURITY;
+-- Drop broad legacy policies (if present)
+DROP POLICY IF EXISTS "Allow all for chat_sessions" ON chat_sessions;
+DROP POLICY IF EXISTS "Allow all for chat_messages" ON chat_messages;
+DROP POLICY IF EXISTS "Allow all for user_interactions" ON user_interactions;
+DROP POLICY IF EXISTS "Allow read for pyqs" ON pyqs;
+DROP POLICY IF EXISTS "chat_sessions_owner_read" ON chat_sessions;
+DROP POLICY IF EXISTS "chat_sessions_owner_insert" ON chat_sessions;
+DROP POLICY IF EXISTS "chat_sessions_owner_update" ON chat_sessions;
+DROP POLICY IF EXISTS "chat_sessions_owner_delete" ON chat_sessions;
+DROP POLICY IF EXISTS "chat_messages_owner_read" ON chat_messages;
+DROP POLICY IF EXISTS "chat_messages_owner_insert" ON chat_messages;
+DROP POLICY IF EXISTS "chat_messages_owner_delete" ON chat_messages;
+DROP POLICY IF EXISTS "user_interactions_owner_all" ON user_interactions;
+DROP POLICY IF EXISTS "pyqs_public_read" ON pyqs;
 
--- Option 2: If you want to keep RLS enabled, run this instead:
-/*
--- Allow anyone to create/read/update/delete chat sessions
-CREATE POLICY "Allow all for chat_sessions" ON chat_sessions
-  FOR ALL USING (true) WITH CHECK (true);
+-- Session isolation by owner user_id
+CREATE POLICY "chat_sessions_owner_read"
+  ON chat_sessions
+  FOR SELECT
+  USING (auth.uid()::text = user_id);
 
--- Allow anyone to create/read/update/delete chat messages
-CREATE POLICY "Allow all for chat_messages" ON chat_messages
-  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "chat_sessions_owner_insert"
+  ON chat_sessions
+  FOR INSERT
+  WITH CHECK (auth.uid()::text = user_id);
 
--- Allow anyone to create/read user interactions
-CREATE POLICY "Allow all for user_interactions" ON user_interactions
-  FOR ALL USING (true) WITH CHECK (true);
+CREATE POLICY "chat_sessions_owner_update"
+  ON chat_sessions
+  FOR UPDATE
+  USING (auth.uid()::text = user_id)
+  WITH CHECK (auth.uid()::text = user_id);
 
--- Allow anyone to read PYQs
-CREATE POLICY "Allow read for pyqs" ON pyqs
-  FOR SELECT USING (true);
-*/
+CREATE POLICY "chat_sessions_owner_delete"
+  ON chat_sessions
+  FOR DELETE
+  USING (auth.uid()::text = user_id);
+
+-- Message isolation by joining parent session ownership
+CREATE POLICY "chat_messages_owner_read"
+  ON chat_messages
+  FOR SELECT
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM chat_sessions s
+      WHERE s.id = chat_messages.session_id
+      AND s.user_id = auth.uid()::text
+    )
+  );
+
+CREATE POLICY "chat_messages_owner_insert"
+  ON chat_messages
+  FOR INSERT
+  WITH CHECK (
+    EXISTS (
+      SELECT 1
+      FROM chat_sessions s
+      WHERE s.id = chat_messages.session_id
+      AND s.user_id = auth.uid()::text
+    )
+  );
+
+CREATE POLICY "chat_messages_owner_delete"
+  ON chat_messages
+  FOR DELETE
+  USING (
+    EXISTS (
+      SELECT 1
+      FROM chat_sessions s
+      WHERE s.id = chat_messages.session_id
+      AND s.user_id = auth.uid()::text
+    )
+  );
+
+-- Interaction isolation by owner
+CREATE POLICY "user_interactions_owner_all"
+  ON user_interactions
+  FOR ALL
+  USING (auth.uid()::text = user_id)
+  WITH CHECK (auth.uid()::text = user_id);
+
+-- PYQ table policy kept permissive for reads (if intended public)
+CREATE POLICY "pyqs_public_read"
+  ON pyqs
+  FOR SELECT
+  USING (true);

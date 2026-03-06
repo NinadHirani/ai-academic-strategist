@@ -3,25 +3,22 @@
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { RoadmapTree } from "./CopilotWidgets";
 import { PromptBlock } from "./PromptWidgets";
+import MentorPopup from "./MentorPopup";
 import type { RoadmapTopic, TopicExpansion } from "@/lib/copilot-types";
-
-interface UploadedDocument {
-  id: string;
-  name: string;
-  type: string;
-  status: "ready" | "processing" | "error";
-  chunkCount?: number;
-}
+import { deleteDocument } from "@/lib/documents";
+import { DEFAULT_USER_ID } from "@/lib/config";
+import type { ChatMode, UploadedDocument } from "@/lib/types";
+import { formatChatDate } from "@/lib/utils";
 
 interface ChatSession {
   id: string;
   title: string;
-  mode: "study" | "deepExplore";
+  mode: ChatMode;
   updatedAt: string;
 }
 
 interface ChatPanelProps {
-  activeMode: "study" | "deepExplore";
+  activeMode: ChatMode;
   documents?: UploadedDocument[];
   onRequestUpload?: () => void;
   onClearDocuments?: () => void | Promise<void>;
@@ -269,6 +266,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
   const [showPastChats, setShowPastChats] = useState(false);
   const [showAllChats, setShowAllChats] = useState(false);
   const [showDocList, setShowDocList] = useState(false);
+  const [showMentorPopup, setShowMentorPopup] = useState(false);
   const [expandedTopics, setExpandedTopics] = useState<Record<string, TopicExpansion | any>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -279,7 +277,7 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
 
   const fetchPastChats = async () => {
     try {
-      const response = await fetch("/api/chat/sessions?userId=anonymous&limit=100");
+      const response = await fetch(`/api/chat/sessions?userId=${encodeURIComponent(DEFAULT_USER_ID)}&limit=100`);
       const data = await response.json();
       if (data.success && data.sessions) {
         setPastChats(data.sessions);
@@ -380,32 +378,6 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
       }));
     }
   }, [expandedTopics]);
-
-  // Format date for display
-  const formatChatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString);
-      const now = new Date();
-      const dateStr = date.toDateString();
-      const nowStr = now.toDateString();
-
-      if (dateStr === nowStr) return "Today";
-
-      const yesterday = new Date(now);
-      yesterday.setDate(yesterday.getDate() - 1);
-      if (dateStr === yesterday.toDateString()) return "Yesterday";
-
-      const diffTime = now.getTime() - date.getTime();
-      const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-      if (diffDays < 7) {
-        return date.toLocaleDateString("en-US", { weekday: "short" });
-      }
-
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-    } catch {
-      return dateString;
-    }
-  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -512,6 +484,13 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
           </div>
         </div>
         <div className="chat-actions">
+          <button
+            className="mentor-popup-btn"
+            onClick={() => setShowMentorPopup(true)}
+            title="Open mentor assistant"
+          >
+            🧘 Mentor
+          </button>
           {/* Document status badge */}
           {documents.length > 0 && (
             <div
@@ -591,6 +570,16 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
         </div>
       </div>
 
+      <MentorPopup
+        isOpen={showMentorPopup}
+        onClose={() => setShowMentorPopup(false)}
+        messages={messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+          toolResult: m.toolResult,
+        }))}
+      />
+
       {showDocList && (
         <div className="doc-list-panel-overlay" onClick={() => setShowDocList(false)} />
       )}
@@ -609,11 +598,9 @@ export default function ChatPanel({ activeMode, documents = [], onRequestUpload,
                     onClick={async (e) => {
                       e.stopPropagation();
                       try {
-                        const resp = await fetch(`/api/documents?id=${encodeURIComponent(doc.id)}`, { method: 'DELETE' });
-                        if (resp.ok) {
-                          const updated = documents.filter(d => d.id !== doc.id);
-                          onDocumentsChange?.(updated);
-                        }
+                        await deleteDocument(doc.id);
+                        const updated = documents.filter((d) => d.id !== doc.id);
+                        onDocumentsChange?.(updated);
                       } catch (err) {
                         console.error('delete doc', err);
                       }

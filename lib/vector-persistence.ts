@@ -10,6 +10,7 @@ import * as path from "path";
 const PERSISTENCE_DIR = path.join(process.cwd(), ".vector-store-cache");
 const CHUNKS_FILE = path.join(PERSISTENCE_DIR, "chunks.json");
 const LOCK_FILE = path.join(PERSISTENCE_DIR, ".lock");
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 interface PersistedChunk {
   id: string;
@@ -51,6 +52,11 @@ function ensureDir(): void {
 export function saveChunksToDisk(
   chunks: Map<string, PersistedChunk>
 ): boolean {
+  if (IS_PRODUCTION) {
+    // Serverless filesystems are ephemeral; avoid false persistence assumptions.
+    return false;
+  }
+
   try {
     ensureDir();
     const data: PersistenceData = {
@@ -82,6 +88,10 @@ export function saveChunksToDisk(
  * Load chunks from disk
  */
 export function loadChunksFromDisk(): PersistedChunk[] {
+  if (IS_PRODUCTION) {
+    return [];
+  }
+
   try {
     if (!fs.existsSync(CHUNKS_FILE)) {
       return [];
@@ -105,6 +115,10 @@ export function loadChunksFromDisk(): PersistedChunk[] {
  * Clear persisted data
  */
 export function clearPersistedData(): void {
+  if (IS_PRODUCTION) {
+    return;
+  }
+
   try {
     if (fs.existsSync(CHUNKS_FILE)) {
       fs.unlinkSync(CHUNKS_FILE);
@@ -118,5 +132,9 @@ export function clearPersistedData(): void {
  * Check if persisted data exists
  */
 export function hasPersistedData(): boolean {
+  if (IS_PRODUCTION) {
+    return false;
+  }
+
   return fs.existsSync(CHUNKS_FILE);
 }

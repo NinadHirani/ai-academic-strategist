@@ -8,14 +8,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { processDocument } from "@/lib/rag";
 import { processDocumentFile, validateFile } from "@/lib/document-processor";
 import { supabaseAdmin } from "@/lib/supabase";
+import { resolveRequestUserId } from "@/lib/request-auth";
+import { DEFAULT_USER_ID } from "@/lib/config";
+import { MAX_FILE_SIZE } from "@/lib/types";
 import { randomUUID } from "crypto";
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const BUCKET_NAME = "documents";
 
 /**
  * Get API configuration for embeddings
- * Uses Groq (fast) with fallback to Ollama
+ * Uses Groq or OpenAI-compatible API only.
  */
 function getEmbeddingConfig(): {
   apiKey: string;
@@ -41,13 +43,10 @@ function getEmbeddingConfig(): {
       model: "text-embedding-3-small",
     };
   }
-  
-  // Fallback to Ollama (requires local Ollama server)
-  return {
-    apiKey: "",
-    baseUrl: "http://localhost:11434",
-    model: "nomic-embed-text",
-  };
+
+  throw new Error(
+    "No embedding provider configured. Set GROQ_API_KEY or OPENAI_API_KEY."
+  );
 }
 
 /**
@@ -161,7 +160,9 @@ async function updateDocumentStatus(
  */
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const startTime = Date.now();
-  const userId = "anonymous"; // TODO: Get from session/auth
+  const auth = await resolveRequestUserId(request);
+  if (!auth.ok) return auth.response;
+  const userId = auth.userId || DEFAULT_USER_ID;
 
   try {
     // Parse form data

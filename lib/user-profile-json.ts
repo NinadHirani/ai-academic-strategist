@@ -36,6 +36,8 @@ export interface UserProfile {
 
 const PROFILE_FILE_NAME = 'user_profile.json';
 const DATA_DIR = path.join(process.cwd(), 'data');
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const memoryProfiles: UserProfile = {};
 
 // Ensure data directory exists
 function ensureDataDir(): void {
@@ -57,6 +59,10 @@ function getProfileFilePath(): string {
  * Returns empty profile if file doesn't exist
  */
 export function loadUserProfile(): UserProfile {
+  if (IS_PRODUCTION) {
+    return memoryProfiles;
+  }
+
   ensureDataDir();
   const filePath = getProfileFilePath();
 
@@ -76,6 +82,12 @@ export function loadUserProfile(): UserProfile {
  * Save user profile to JSON file
  */
 export function saveUserProfile(profile: UserProfile): void {
+  if (IS_PRODUCTION) {
+    Object.keys(memoryProfiles).forEach((key) => delete memoryProfiles[key]);
+    Object.assign(memoryProfiles, profile);
+    return;
+  }
+
   ensureDataDir();
   const filePath = getProfileFilePath();
 

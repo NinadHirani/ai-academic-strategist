@@ -2,7 +2,7 @@
 /**
  * Embedding Generation Utilities - OPTIMIZED FOR SPEED
  * Uses Groq API for fast embeddings (free tier available)
- * Fallback to Ollama if needed
+ * Optional fallback to custom OpenAI-compatible/Ollama endpoint only when explicitly configured
  */
 import { groqKeyManager } from "./groq-key-manager";
 
@@ -150,7 +150,8 @@ export async function generateEmbeddings(
     batchSize?: number;
   }
 ): Promise<{ success: boolean; embeddings?: number[][]; error?: string }> {
-  const { apiKey, baseUrl = "http://localhost:11434", model = "nomic-embed-text" } = options;
+  const { apiKey, baseUrl, model = "nomic-embed-text" } = options;
+  const isProduction = process.env.NODE_ENV === "production";
 
   // Check cache first - separate cached from uncached
   const cachedResults: number[][] = [];
@@ -196,33 +197,43 @@ export async function generateEmbeddings(
 
       return { success: true, embeddings: cachedResults };
     } catch (error) {
-      console.warn("[Embeddings] Groq failed, trying Ollama:", error);
+      console.warn("[Embeddings] Primary provider failed:", error);
     }
   }
 
-  // Fallback to Ollama
-  console.log(`[Embeddings] Using Ollama for ${uncachedTexts.length} texts`);
-  try {
-    embeddings = await generateWithOllama(uncachedTexts, baseUrl, model);
+  // Optional explicit fallback endpoint (no implicit localhost defaults)
+  if (baseUrl && baseUrl.trim().length > 0) {
+    console.log(`[Embeddings] Using explicit fallback endpoint for ${uncachedTexts.length} texts`);
+    try {
+      embeddings = await generateWithOllama(uncachedTexts, baseUrl, model);
 
-    // Cache new embeddings
-    let embIndex = 0;
-    for (let i = 0; i < texts.length; i++) {
-      if (!cachedResults[i]) {
-        const cacheKey = `ollama:${texts[i].substring(0, 100)}`;
-        if (embeddingCache.size >= MAX_CACHE_SIZE) {
-          const firstKey = embeddingCache.keys().next().value;
-          if (firstKey) embeddingCache.delete(firstKey);
+      // Cache new embeddings
+      let embIndex = 0;
+      for (let i = 0; i < texts.length; i++) {
+        if (!cachedResults[i]) {
+          const cacheKey = `fallback:${texts[i].substring(0, 100)}`;
+          if (embeddingCache.size >= MAX_CACHE_SIZE) {
+            const firstKey = embeddingCache.keys().next().value;
+            if (firstKey) embeddingCache.delete(firstKey);
+          }
+          embeddingCache.set(cacheKey, embeddings[embIndex]);
+          cachedResults[i] = embeddings[embIndex];
+          embIndex++;
         }
-        embeddingCache.set(cacheKey, embeddings[embIndex]);
-        cachedResults[i] = embeddings[embIndex];
-        embIndex++;
       }
-    }
 
-    return { success: true, embeddings: cachedResults };
-  } catch (error) {
-    console.warn("[Embeddings] Ollama failed, using simple hash fallback:", error);
+      return { success: true, embeddings: cachedResults };
+    } catch (error) {
+      console.warn("[Embeddings] Explicit fallback endpoint failed:", error);
+    }
+  }
+
+  if (isProduction) {
+    return {
+      success: false,
+      error:
+        "Embedding provider unavailable in production. Configure GROQ_API_KEY or OPENAI_API_KEY.",
+    };
   }
 
   // Final fallback: Simple hash-based embeddings (for testing without external services)
@@ -312,7 +323,8 @@ export async function generateEmbedding(
     model?: string;
   }
 ): Promise<number[]> {
-  const { apiKey, baseUrl = "http://localhost:11434", model = "nomic-embed-text" } = options;
+  const { apiKey, baseUrl, model = "nomic-embed-text" } = options;
+  const isProduction = process.env.NODE_ENV === "production";
 
   // Check cache
   const cacheKey = `groq:${text.substring(0, 100)}`;
@@ -332,22 +344,30 @@ export async function generateEmbedding(
     }
   }
 
-  // Fallback to Ollama
-  try {
-    const response = await fetch(`${baseUrl}/api/embeddings`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ model, prompt: text }),
-    });
+  // Optional explicit fallback endpoint
+  if (baseUrl && baseUrl.trim().length > 0) {
+    try {
+      const response = await fetch(`${baseUrl}/api/embeddings`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model, prompt: text }),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Embedding API error: ${response.statusText}`);
+      if (!response.ok) {
+        throw new Error(`Embedding API error: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      return data.embedding || [];
+    } catch {
+      console.warn("[Embeddings] Explicit fallback endpoint failed");
     }
+  }
 
-    const data = await response.json();
-    return data.embedding || [];
-  } catch {
-    console.warn("[Embeddings] Ollama failed, using simple hash fallback");
+  if (isProduction) {
+    throw new Error(
+      "Embedding provider unavailable in production. Configure GROQ_API_KEY or OPENAI_API_KEY."
+    );
   }
 
   // Final fallback: Simple hash-based embedding

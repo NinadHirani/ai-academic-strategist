@@ -1,16 +1,15 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
 // Get Supabase URL and keys from environment
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 // Supabase client for browser - only initialize if credentials exist
 let _supabase: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient | null {
   if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('[Supabase] Client not initialized - missing URL or ANON_KEY');
+    console.warn('[Supabase] Client not initialized - missing NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY');
     return null;
   }
   
@@ -26,11 +25,9 @@ export const supabase = new Proxy({} as SupabaseClient, {
   get(_, prop) {
     const client = getSupabaseClient();
     if (!client) {
-      // Return a function that logs the issue and returns a failed-like object
-      console.warn(`[Supabase] Attempted to access '${String(prop)}' but client is not initialized`);
-      return typeof prop === 'string' ? (() => {
-        return { data: null, error: { message: 'Supabase client not initialized', code: 'NOT_INIT' } };
-      }) : undefined;
+      throw new Error(
+        `[Supabase] Client not initialized for '${String(prop)}'. Set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.`
+      );
     }
     const value = (client as any)[prop];
     // Bind functions to the client to preserve `this` context
@@ -43,8 +40,9 @@ export const supabase = new Proxy({} as SupabaseClient, {
 
 // Supabase admin client for server-side operations (service role key)
 export const supabaseAdmin = process.env.SUPABASE_SERVICE_ROLE_KEY
+  && process.env.NEXT_PUBLIC_SUPABASE_URL
   ? createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL || '',
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
       process.env.SUPABASE_SERVICE_ROLE_KEY,
       {
         auth: {

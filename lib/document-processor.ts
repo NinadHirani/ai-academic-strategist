@@ -4,6 +4,8 @@
  * Supports: PDF, DOCX, TXT, MD, CSV
  */
 
+import { ALLOWED_EXTENSIONS, ALLOWED_TYPES, MAX_FILE_SIZE } from "@/lib/types";
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -183,18 +185,8 @@ function extractPlainText(content: ArrayBuffer): ExtractionResult {
  * Check if file type is supported
  */
 export function isSupportedFileType(fileType: string, fileName: string): boolean {
-  const supportedTypes: string[] = [
-    "application/pdf",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "text/plain",
-    "text/markdown",
-    "text/csv",
-  ];
-
-  const supportedExtensions = [".pdf", ".docx", ".txt", ".md", ".csv"];
-  
-  const hasSupportedType = supportedTypes.includes(fileType.toLowerCase());
-  const hasSupportedExtension = supportedExtensions.some(ext => 
+  const hasSupportedType = ALLOWED_TYPES.includes(fileType.toLowerCase());
+  const hasSupportedExtension = ALLOWED_EXTENSIONS.some((ext) =>
     fileName.toLowerCase().endsWith(ext)
   );
 
@@ -296,8 +288,6 @@ export async function processDocumentFile(
  * Validate file before processing
  */
 export function validateFile(file: File): { valid: boolean; error?: string } {
-  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-  
   if (!file) {
     return { valid: false, error: "No file provided" };
   }

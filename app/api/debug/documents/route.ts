@@ -8,6 +8,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase";
 
 export async function GET(request: NextRequest): Promise<NextResponse> {
+  if (process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   try {
     if (!supabaseAdmin) {
       return NextResponse.json({ error: "Supabase admin client not initialized" }, { status: 500 });

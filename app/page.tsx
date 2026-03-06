@@ -6,18 +6,12 @@ import ChatPanel from "./components/ChatPanel";
 import FileUpload from "./components/FileUpload";
 import { QuizModule } from "./components/interactive/QuizModule";
 import { FlashcardModule } from "./components/interactive/FlashcardModule";
-
-interface Document {
-  id: string;
-  name: string;
-  type: string;
-  status: "ready" | "processing" | "error";
-  chunkCount?: number;
-}
+import { deleteAllDocuments } from "@/lib/documents";
+import type { ChatMode, UploadedDocument } from "@/lib/types";
 
 export default function Home() {
-  const [activeMode, setActiveMode] = useState<"study" | "deepExplore">("study");
-  const [documents, setDocuments] = useState<Document[]>([]);
+  const [activeMode, setActiveMode] = useState<ChatMode>("study");
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [showUpload, setShowUpload] = useState(false);
 
   // Study Modal State
@@ -33,7 +27,7 @@ export default function Home() {
         const response = await fetch("/api/documents");
         const data = await response.json();
         if (data.documents && data.documents.length > 0) {
-          const existingDocs: Document[] = data.documents.map((doc: any) => ({
+          const existingDocs: UploadedDocument[] = data.documents.map((doc: any) => ({
             id: doc.id,
             name: doc.name,
             type: doc.type || "application/pdf",
@@ -49,7 +43,7 @@ export default function Home() {
     fetchExistingDocuments();
   }, []);
 
-  const handleDocumentsChange = useCallback((docs: Document[]) => {
+  const handleDocumentsChange = useCallback((docs: UploadedDocument[]) => {
     setDocuments(docs);
   }, []);
 
@@ -57,18 +51,8 @@ export default function Home() {
     // Clear local state first
     setDocuments([]);
 
-    // Attempt to delete all documents server-side to avoid long-term storage
     try {
-      const resp = await fetch("/api/documents");
-      const data = await resp.json();
-
-      if (data?.documents?.length) {
-        await Promise.all(
-          data.documents.map((doc: any) =>
-            fetch(`/api/documents?id=${encodeURIComponent(doc.id)}`, { method: "DELETE" })
-          )
-        );
-      }
+      await deleteAllDocuments();
     } catch (error) {
       console.error("[Home] Error clearing documents:", error);
     }
@@ -124,14 +108,7 @@ export default function Home() {
             <h3>Academic Dashboard</h3>
             <p>Track your learning velocity and retention score.</p>
           </div>
-        </a>
-        <a href="/mentor" className="feature-card card-premium">
-          <span className="feature-card-icon">🧘</span>
-          <div className="feature-card-info">
-            <h3>AI Study Mentor</h3>
-            <p>Daily routines, focus sessions, and spaced repetition.</p>
-          </div>
-        </a>
+        </a>          
         <a href="/career" className="feature-card card-premium">
           <span className="feature-card-icon">💼</span>
           <div className="feature-card-info">
