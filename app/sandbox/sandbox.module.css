@@ -1,0 +1,194 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.fieldLabel {
+  font-size: 0.7rem;
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.input {
+  padding: 0.5rem 0.6rem;
+  background: var(--bg-input);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.8rem;
+  font-family: var(--font-mono);
+  outline: none;
+  width: 100%;
+}
+
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.checkboxText {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+.actionButton {
+  margin-top: 0.75rem;
+  padding: 0.65rem 1.25rem;
+  background: var(--gradient-primary);
+  border: none;
+  border-radius: var(--radius-md);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.promptBox {
+  position: relative;
+  padding: 1rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  margin-bottom: 0.5rem;
+}
+
+.textareaEdit {
+  width: 100%;
+  min-height: 80px;
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  margin-top: 0.5rem;
+}
+
+.buttonRow {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.smallButton {
+  padding: 0.3rem 0.8rem;
+  background: var(--bg-tertiary);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.saveButton {
+  padding: 0.3rem 0.8rem;
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.favoriteButton {
+  padding: 0.3rem 0.8rem;
+  background: #a855f7;
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.favorites {
+  margin-bottom: 1rem;
+}
+
+.favoritesTitle {
+  font-size: 0.9rem;
+  color: var(--accent-blue);
+  margin-bottom: 0.5rem;
+}
+
+.favoriteList {
+  list-style: none;
+  padding: 0;
+}
+
+.favoriteItem {
+  margin-bottom: 0.5rem;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+}
+
+.favoritePrompt {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  margin-bottom: 0.25rem;
+}
+
+.useButton {
+  padding: 0.2rem 0.7rem;
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.aboutCard {
+  padding: 1.25rem;
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.8;
+}
+
+.aboutHeading {
+  color: var(--text-primary);
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+
+.aboutSection {
+  margin-bottom: 1.25rem;
+}
+
+.aboutSubheading {
+  color: var(--accent-blue);
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.aboutList {
+  padding-left: 1.25rem;
+}
+
+.tipCard {
+  padding: 0.75rem;
+  background: rgba(168, 85, 247, 0.08);
+  border-radius: var(--radius-md);
+}
+
+.tipHeading {
+  color: #a855f7;
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+}
+
+.copyButton {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  padding: 0.4rem 1rem;
+  background: var(--gradient-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-weight: 600;
+  font-size: 0.85rem;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+  z-index: 2;
+}

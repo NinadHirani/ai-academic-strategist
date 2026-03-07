@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Keep API routes handled by Next.js in all environments.
 };
 
 export default nextConfig;
